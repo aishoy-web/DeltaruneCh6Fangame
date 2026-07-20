@@ -8,6 +8,7 @@ from dialogue_box import DialogueBox
 from room import Exit
 from room import Room
 import json
+from audiomanager import AudioManager
 BASE_DIR = Path(__file__).parent
 # with open(BASE_DIR/"eng.json",encoding="utf-8") as f:
 #     Dialogue = json.load(f)
@@ -31,6 +32,7 @@ class Game:
         self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
         self.keys_pressed = set()
         # Load assets
+        self.audio = AudioManager()
         self.load_room("myroom")
         # Create game objects
         self.player = Player(self)
@@ -122,6 +124,8 @@ class Game:
         if hasattr(self, "player"):
             self.canvas.tag_raise(self.player.sprite)
             self.player.room = room
+        if room.music:
+            self.audio.play_music(room.music)
     def check_room_transitions(self):
         for exit in self.room.exits:
             if self.player.is_touching_exit(exit):
@@ -290,6 +294,6 @@ class Game:
             if "Down" in self.keys_pressed:
                 self.player.move_down()
         self.check_room_transitions()
-        self.root.after(16, self.update)
+        self.root.after(16, self.update) # Framerate, lower number = higher framerate
     def run(self):
         self.root.mainloop()
