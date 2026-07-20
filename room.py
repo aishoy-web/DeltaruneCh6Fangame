@@ -1,15 +1,54 @@
-from dataclasses import dataclass,field
+#The purpose of this file is to handle room attributes and exit logic.
+from dataclasses import dataclass
 from dialogue import Dialogue
 @dataclass
+class Exit:
+    x: int
+    y: int
+    width: int
+    height: int
+    destination: str
+    spawn_x: int
+    spawn_y: int
+    # transition: str
+    # sound: str
+    # required_flag: str
+@dataclass
+class Interactable:
+    x: int
+    y: int
+    width: int
+    height: int
+    action: str
+    data: object | None = None
+    facing: str | None = None
+@dataclass
 class Room:
-    name:str
-    background:str
-    music:str|None = None
-    dialogue:list = field(default_factory=list)
-    exits:dict = field(default_factory=dict)
-
-bedroom = Room(name="Bedroom",background="bedroom.png",music="You Can Always Come Home.mp3",dialogue=[Dialogue(voice=None,text="*Test. Insert very long text.",choices=None,scene_id=None,sound_effect=None)])
-hallway = Room(name="Hallway",background="hallway.png",exits={"leftup": "bedroom","rightup": "kitchen"})
-
-bedroom.exits["down"] = hallway
-hallway.exits["up"] = bedroom
+    name: str
+    background: str
+    music: str
+    dialogue: list
+    collisions: list
+    exits: list[Exit]
+    def __init__(
+        self,
+        name,
+        background,
+        collisions,
+        music=None,
+        dialogue=None,
+        exits=None,
+        interactable_objects = None,
+        npcs=None,
+        triggers=None,
+        items=None,):
+        self.name = name
+        self.background = background
+        self.collisions = collisions
+        self.music = music
+        self.dialogue = dialogue if dialogue else []
+        self.exits = exits if exits else []
+        self.interactable_objects = (interactable_objects if interactable_objects else [])
+        self.npcs = npcs if npcs else []
+        self.triggers = triggers if triggers else []
+        self.items = items if items else []
