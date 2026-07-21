@@ -8,7 +8,7 @@ class Player:
         self.room = game.room
         self.x = 160
         self.y = 110
-        self.walk_speed = 1.9 # Controls walking speed
+        self.walk_speed = 1.6 # Controls walking speed
         self.run_speed = self.walk_speed * 1.75
         self.speed = self.walk_speed
         self.image = Image.open(sprite_path)
@@ -86,34 +86,34 @@ class Player:
     
     def get_interaction_box(self):
         size = 16 # Change this to increase or decrease the size of the interaction box
-
+        left, top, right, bottom = self.get_hitbox(self.x, self.y)
         if self.facing == "up":
             return (
-                self.x,
-                self.y - size,
-                self.x + self.width,
-                self.y,)
+                left,
+                top - size,
+                right,
+                top,)
 
         elif self.facing == "down":
             return (
-                self.x,
-                self.y + self.height,
-                self.x + self.width,
-                self.y + self.height + size,)
+                left,
+                bottom,
+                right,
+                bottom + size,)
 
         elif self.facing == "left":
             return (
-                self.x - size,
-                self.y,
-                self.x,
-                self.y + self.height,)
+                left - size,
+                top,
+                right,
+                bottom,)
 
         else:  # right
             return (
-                self.x + self.width,
-                self.y,
-                self.x + self.width + size,
-                self.y + self.height,)
+                right,
+                top,
+                right + size,
+                bottom,)
     def render(self):
         canvas_x = self.game.offset_x+self.x*self.game.scale
         canvas_y = self.game.offset_y+self.y*self.game.scale

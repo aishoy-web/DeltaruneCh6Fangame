@@ -1,20 +1,20 @@
 import tkinter as tk
-from dialogue import Dialogue
 from pathlib import Path
-from rooms import bedroom, ROOMS
+from rooms import ROOMS
 from PIL import Image, ImageTk
 from player import Player
 from dialogue_box import DialogueBox
-from room import Exit
 from room import Room
 import json
 from audiomanager import AudioManager
-BASE_DIR = Path(__file__).parent
-# with open(BASE_DIR/"eng.json",encoding="utf-8") as f:
-#     Dialogue = json.load(f)
+BASE_DIR = Path(__file__).resolve().parent
 class Game:
     def __init__(self):
         self.root = tk.Tk()
+        icon_path = BASE_DIR / "sprites" / "assets" / "taskbar_logo.png"
+        icon = ImageTk.PhotoImage(Image.open(icon_path))
+        self.root.iconphoto(True, icon)
+        self.icon = icon
         self.setup_window()
         # Rendering state
         self.scale = 1.0
@@ -29,6 +29,9 @@ class Game:
         self.typing_job = None
         self.choice_active = False
         self.collision_debug = []
+        self.player_hitbox_debug = None
+        self.interaction_debug = None
+        self.exit_debug = []
         self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
         self.keys_pressed = set()
         # Load assets
@@ -37,7 +40,7 @@ class Game:
         # Create game objects
         self.player = Player(self)
         # Draw everything once
-        self.render()
+        self.render_static()
         self.update_debug_hud()
         self.update()
         self.typing = True
@@ -115,7 +118,7 @@ class Game:
             self.background_sprite = self.canvas.create_image(0,0, image = self.background_image, anchor = "nw")
         else: 
             self.canvas.itemconfig(self.background_sprite, image=self.background_image)
-        self.canvas.delete("debug")
+        # self.canvas.delete("debug")
         
         for rect in self.collision_debug:
             self.canvas.delete(rect)
@@ -135,7 +138,7 @@ class Game:
         self.load_room(exit.destination)
         self.player.x = exit.spawn_x
         self.player.y = exit.spawn_y
-        self.render()
+        self.render_static()
     def on_resize(self,event = None):
         # Ignore tiny events while the window is initializing
         canvas_width = self.canvas.winfo_width()
@@ -148,15 +151,17 @@ class Game:
         self.offset_x = (canvas_width - draw_width) // 2
         self.offset_y = (canvas_height - draw_height) // 2
         self.update_scale()
-        self.render()
-    def render(self):
+        self.render_static()
+    def render_static(self):
         self.update_scale()        # Game updates scale
         self.render_background()
-
+        self.render_debug_static()
+    def render_dynamic(self):
         if hasattr(self, "player"):
             self.player.render()
 
-        self.render_debug()
+        self.render_debug_dynamic()
+        self.update_debug_hud()
     def rectangles_overlap(a,b):
         left1, top1, right1, bottom1 = a
         left2, top2, right2, bottom2 = b
@@ -165,11 +170,12 @@ class Game:
             left1 < right2 and
             bottom1 > top2 and
             top1 < bottom2)
-    def render_debug(self):
-        self.canvas.delete("debug")
-        self.collision_debug.clear()
+    def render_debug_static(self):
         if not self.debug_mode:
             return
+        for rect in self.collision_debug:
+            self.canvas.delete(rect)
+        self.collision_debug.clear()
         for left, top, right, bottom in self.room.collisions:
             rect = self.canvas.create_rectangle(
                 left * self.scale + self.offset_x,
@@ -195,17 +201,34 @@ class Game:
                 width=2,
                 tags="debug",)
             self.collision_debug.append(rect)
+    def render_debug_dynamic(self):
+        if not self.debug_mode:
+            return
+        left, top, right, bottom = self.player.get_interaction_box()
+        if self.interaction_debug is None:
+            self.interaction_debug = self.canvas.create_rectangle(
+                0, 0, 0, 0,
+                outline="yellow",
+                width=2,
+                tags="debug")
+        self.canvas.coords(
+            self.interaction_debug,
+            left * self.scale + self.offset_x,
+            top * self.scale + self.offset_y,
+            right * self.scale + self.offset_x,
+            bottom * self.scale + self.offset_y)
     def update_debug_hud(self):
         if not self.debug_mode:
             self.canvas.itemconfigure(self.debug_text, state="hidden")
             return
         self.canvas.itemconfigure(self.debug_text, state="normal")
-        self.canvas.itemconfig(
-            self.debug_text,
-            text=(
-                f"Room: {self.room.name}\n"
-                f"X: {self.player.x:.1f}\n"
-                f"Y: {self.player.y:.1f}"))
+        if (self.player.x, self.player.y) != self.player.x or self.player.y:
+            self.canvas.itemconfig(
+                self.debug_text,
+                text=(
+                    f"Room: {self.room.name}\n"
+                    f"X: {self.player.x:.1f}\n"
+                    f"Y: {self.player.y:.1f}\n"))
     def render_background(self):
         scaled = self.background_pil.resize((int(self.game_width*self.scale),int(self.game_height*self.scale)),Image.Resampling.NEAREST)
         self.background_image = ImageTk.PhotoImage(scaled)
@@ -271,12 +294,15 @@ class Game:
         self.character_index = 0
         self.typing = True
         self.type_text()
+    def interact(self, event = None):
+        interaction_box = self.player.get_interaction_box()
+        # print(interaction_box) #Uncomment only if you want the dimensions of the interaction box to be printed in the terminal window
     def bind_keys(self):
         self.root.bind("<KeyPress>", self.key_press)
         self.root.bind("<KeyRelease>", self.key_release)
         self.root.bind("<space>", self.advance_dialogue)
         self.root.bind("<z>", self.advance_dialogue)
-        self.root.bind("<Z>", self.advance_dialogue)
+        self.root.bind("<z>", self.interact)
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         self.keys_pressed.add(event.keysym)
@@ -294,6 +320,7 @@ class Game:
             if "Down" in self.keys_pressed:
                 self.player.move_down()
         self.check_room_transitions()
+        self.render_dynamic()
         self.root.after(16, self.update) # Framerate, lower number = higher framerate
     def run(self):
         self.root.mainloop()
