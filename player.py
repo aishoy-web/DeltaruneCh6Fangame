@@ -1,7 +1,9 @@
 from pathlib import Path
 from PIL import Image, ImageTk
+from animated_sprite import AnimatedSprite
 BASE_DIR = Path(__file__).parent
 sprite_path = BASE_DIR/"sprites"/"player"/"spr_krisd"/"spr_krisd_0.png"
+sprite_sheet_path = BASE_DIR/"sprites"/"player"/"kris_spritesheet.png"
 class Player:
     def __init__(self, game):
         self.game = game
@@ -11,9 +13,19 @@ class Player:
         self.walk_speed = 1.6 # Controls walking speed
         self.run_speed = self.walk_speed * 1.75
         self.speed = self.walk_speed
-        self.image = Image.open(sprite_path)
-        self.photo = ImageTk.PhotoImage(self.image)
-        self.sprite = None
+        self.photo = None
+        self.canvas_sprite = None
+        self.animation = AnimatedSprite(
+            sprite_sheet_path,
+            frame_width=32,
+            frame_height=32,
+            animations={
+                "down": (0,4),
+                "left": (1,4),
+                "right": (2,4),
+                "up": (3,4)},
+                animation_speed=8
+        )
         self.hitbox_width = 15
         self.hitbox_height = 6
         self.hitbox_offset_x = 5
@@ -28,13 +40,12 @@ class Player:
                 tags = "player_debug")
         else:
             self.hitbox_debug = None
-        # print(self.image.size)
-        # print(self.game.scale)
     def move(self, dx, dy):
         self.x += dx
         self.y += dy
-        width = self.image.width
-        height = self.image.height
+        frame = self.animation.get_frame()
+        width = frame.width
+        height = frame.height
         if self.x < 0:
             self.try_exit("left")
         elif self.x > self.game.game_width - width:
@@ -58,6 +69,7 @@ class Player:
             self.speed = self.walk_speed
     def move_left(self):
         self.facing = "left"
+        self.animation.play("left")
         new_x = self.x -self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
@@ -65,6 +77,7 @@ class Player:
 
     def move_right(self):
         self.facing = "right"
+        self.animation.play("right")
         new_x = self.x + self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
@@ -72,6 +85,7 @@ class Player:
 
     def move_up(self):
         self.facing = "up"
+        self.animation.play("up")
         new_y = self.y - self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
@@ -79,6 +93,7 @@ class Player:
 
     def move_down(self):
         self.facing = "down"
+        self.animation.play("down")
         new_y = self.y + self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
@@ -115,23 +130,32 @@ class Player:
                 right + size,
                 bottom,)
     def render(self):
+        frame = self.animation.get_frame()
+        scaled = frame.resize((int(frame.width * self.game.scale),int(frame.height * self.game.scale)),Image.Resampling.NEAREST)
+        self.photo = ImageTk.PhotoImage(scaled)
         canvas_x = self.game.offset_x+self.x*self.game.scale
         canvas_y = self.game.offset_y+self.y*self.game.scale
-        if self.sprite is None:
-            self.sprite = self.game.canvas.create_image(canvas_x,canvas_y,image=self.photo,anchor="nw")
-        else: 
-            self.game.canvas.coords(self.sprite,canvas_x,canvas_y)
+        if self.canvas_sprite is None:
+            self.canvas_sprite = self.game.canvas.create_image(
+                    canvas_x,
+                    canvas_y,
+                    image=self.photo,
+                    anchor="nw")
+        else:
+            self.game.canvas.coords(
+                self.canvas_sprite,
+                canvas_x,
+                canvas_y)
+            self.game.canvas.itemconfig(
+                self.canvas_sprite,
+                image=self.photo)    
         if self.hitbox_debug is not None:
-            self.game.canvas.coords(self.hitbox_debug,
-                                canvas_x + self.hitbox_offset_x * self.game.scale,
-                                canvas_y + self.hitbox_offset_y * self.game.scale,
-                                canvas_x + (self.hitbox_offset_x + self.hitbox_width) * self.game.scale,
-                                canvas_y + (self.hitbox_offset_y + self.hitbox_height) * self.game.scale,)
-        if self.game.scale != self.last_scale:
-            scaled = self.image.resize((int(self.image.width * self.game.scale),int(self.image.height * self.game.scale)),Image.Resampling.NEAREST)
-            self.photo = ImageTk.PhotoImage(scaled)
-            self.game.canvas.itemconfig(self.sprite,image=self.photo)
-            self.last_scale = self.game.scale
+            self.game.canvas.coords(
+                self.hitbox_debug,
+                canvas_x + self.hitbox_offset_x * self.game.scale,
+                canvas_y + self.hitbox_offset_y * self.game.scale,
+                canvas_x + (self.hitbox_offset_x + self.hitbox_width) * self.game.scale,
+                canvas_y + (self.hitbox_offset_y + self.hitbox_height) * self.game.scale,)
         self.game.update_debug_hud()
     def can_move_to(self, new_x, new_y):
         player_left, player_top, player_right, player_bottom = self.get_hitbox(new_x, new_y)

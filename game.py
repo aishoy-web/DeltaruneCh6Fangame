@@ -32,7 +32,7 @@ class Game:
         self.player_hitbox_debug = None
         self.interaction_debug = None
         self.exit_debug = []
-        self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
         self.keys_pressed = set()
         # Load assets
         self.audio = AudioManager()
@@ -47,7 +47,6 @@ class Game:
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
             self.dialogue_data = json.load(f)
         self.type_text()
-        # print(self.root.pack_slaves())
     def load_dialogue(self):
         self.dialogue_index = 0 
         self.dialogue_box = DialogueBox(self)
@@ -98,9 +97,6 @@ class Game:
         )
         self.background_sprite = None
         self.player_sprite = None
-        # print("Children of root:")
-        # for child in self.root.winfo_children():
-            # print(type(child), child)
     def load_room(self, room_id):
         room = ROOMS[room_id]
         self.room = room
@@ -111,21 +107,19 @@ class Game:
         self.background_pil = Image.open(background_path)
         self.game_width = self.background_pil.width
         self.game_height = self.background_pil.height
-        # print(self.background_pil.size)
         self.on_resize()
         self.background_image = ImageTk.PhotoImage(self.background_pil)
         if self.background_sprite is None:
             self.background_sprite = self.canvas.create_image(0,0, image = self.background_image, anchor = "nw")
         else: 
             self.canvas.itemconfig(self.background_sprite, image=self.background_image)
-        # self.canvas.delete("debug")
         
         for rect in self.collision_debug:
             self.canvas.delete(rect)
         self.collision_debug.clear()
         
         if hasattr(self, "player"):
-            self.canvas.tag_raise(self.player.sprite)
+            self.canvas.tag_raise(self.player.canvas_sprite)
             self.player.room = room
         if room.music:
             self.audio.play_music(room.music)
@@ -308,18 +302,26 @@ class Game:
         self.keys_pressed.add(event.keysym)
     def key_release(self, event):
         self.keys_pressed.discard(event.keysym)
-    def update(self):
+    def update(self):  
         if not self.typing:
             self.player.set_sprinting("x" in self.keys_pressed)
+            moved = False
             if "Left" in self.keys_pressed:
                 self.player.move_left()
+                moved = True
             if "Right" in self.keys_pressed:
                 self.player.move_right()
+                moved = True
             if "Up" in self.keys_pressed:
                 self.player.move_up()
+                moved = True
             if "Down" in self.keys_pressed:
                 self.player.move_down()
+                moved = True
+            if not moved:
+                self.player.animation.stop()
         self.check_room_transitions()
+        self.player.animation.update()
         self.render_dynamic()
         self.root.after(16, self.update) # Framerate, lower number = higher framerate
     def run(self):
