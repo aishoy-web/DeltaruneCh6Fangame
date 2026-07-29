@@ -1,7 +1,7 @@
 from pathlib import Path
 from PIL import Image, ImageTk
 BASE_DIR = Path(__file__).parent
-sprite_path = BASE_DIR/"sprites"/"player"/"susie_test_new.png"
+sprite_path = BASE_DIR/"sprites"/"player"/"spr_krisd"/"spr_krisd_0.png"
 class Player:
     def __init__(self, game):
         self.game = game

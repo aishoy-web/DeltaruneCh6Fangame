@@ -37,6 +37,7 @@
   "obj_kris_bedroom_computer_2":"*(It says 'Computer: G0D0FHYP3RD34TH'.)",
   "obj_kris_bedroom_computer_3":"*(This is not the code you're looking for.)",
   "obj_kris_bedroom_computer_4":"*(But at least it stayed behind with you.)",
+  "obj_kris_bedroom_rug_0":"*(Tear stains are visible on the carpet.)",
   "obj_hallway_toriel_door_0":"*(It's...unlocked?)",
   "obj_hallway_toriel_door_1":"*(Are you seriously going in your mother's bedroom?)",
   "obj_hallway_toriel_door_2":"*(You reluctantly open the door...)",
@@ -79,6 +80,10 @@
   "obj_toriel_room_desk_3":"*(Your father's been removed from the photo.)",
   "obj_toriel_room_desk_4":"*(...He's not coming back.)",
   "obj_toriel_room_desk_5":"*(Your mother's desk.)",
-  "obj_toriel_room_desk_6":"*(...You wonder if bringing this laptop to Castle Town would result in another Darkner unlike Queen.)",
-  "obj_toriel_room_window_0":"*(It's another beautiful day.)"
+  "obj_toriel_room_desk_6":"*(...You wonder if bringing this laptop to Castle Town would result in another Darkner like Queen.)",
+  "obj_toriel_room_window_0":"*(It's another beautiful day.)",
+  "itm_weapon_ralsei_garland_scarf_0":"A scarf made from beautiful pine leaves. It gives a beautiful glow from the light within.",
+  "itm_weapon_ralsei_garland_scarf_1":"Decorate me with spiky ornaments.",
+  "itm_weapon_ralsei_garland_scarf_2":"Rockin' around me like a Christmas tree!",
+  "itm_weapon_ralsei_garland_scarf_3":"I'd rather wrap it around an ACTUAL tree."
 }

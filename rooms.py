@@ -1,4 +1,4 @@
-#Different from room.py, this file is used to create the rooms that will be used in the game.
+#Different from room.py, this file stores the details of what rooms are used in the game.
 #It imports the Room class from room.py and creates instances of it for each room in the game. 
 #It also establishes the exits for each room, allowing the player to move between them.
 from room import Room, Exit, Interactable
@@ -31,6 +31,7 @@ hallway = Room(
                 spawn_x=150,
                 spawn_y=165),
                 ])
+
 bedroom = Room(
     name="myroom",
     background="Dreemurr_residence_location_Kris's_room.png",

@@ -1,4 +1,4 @@
-#The purpose of this file is to handle room attributes and exit logic.
+#The purpose of this file is to establish room, exit, and interactable logic.
 from dataclasses import dataclass
 from dialogue import Dialogue
 @dataclass
