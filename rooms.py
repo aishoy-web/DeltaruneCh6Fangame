@@ -54,7 +54,7 @@ bedroom = Room(
         # dresser_asriel
         (90,100,135,117.5)
           ],
-    music="You Can Always Come Home.mp3",
+    music="mus_birdnoise.ogg",
     dialogue=[Dialogue(voice=None,text_id="obj_hallway_toriel_door_0",choices=None,scene_id=None,sound_effect=None)],
     exits=[Exit(x=145,
                 y=220,

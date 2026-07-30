@@ -69,34 +69,42 @@ class Player:
             self.speed = self.walk_speed
     def move_left(self):
         self.facing = "left"
-        self.animation.play("left")
         new_x = self.x -self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
+            self.animation.play("left")
+        else:
+            self.animation.stop()
         self.render()
 
     def move_right(self):
         self.facing = "right"
-        self.animation.play("right")
         new_x = self.x + self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
+            self.animation.play("right")
+        else:
+            self.animation.stop()
         self.render()
 
     def move_up(self):
         self.facing = "up"
-        self.animation.play("up")
         new_y = self.y - self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
+            self.animation.play("up")
+        else:
+            self.animation.stop()
         self.render()
 
     def move_down(self):
         self.facing = "down"
-        self.animation.play("down")
         new_y = self.y + self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
+            self.animation.play("down")
+        else:
+            self.animation.stop()
         self.render()
     
     def get_interaction_box(self):

@@ -34,7 +34,7 @@ class AnimatedSprite:
             raise ValueError(f"Unknown animation: {animation_name}")
         self.playing = True
         if animation_name != self.current_animation:
-            self.playing = True
+            # self.playing = True
             self.current_animation = animation_name
             self.current_frame = 0
             self.timer = 0
