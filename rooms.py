@@ -14,7 +14,7 @@ hallway = Room(
                   (478,128,500,167), # right wall, done
                   (58,167,478,180), #bottom wall
                   ],
-    # music=bedroom.music,
+    music="mus_birdnoise.ogg",
     interactable_objects = [Interactable(
         x=80,
         y=36,
@@ -30,7 +30,7 @@ hallway = Room(
                 destination="myroom",
                 spawn_x=150,
                 spawn_y=165),
-                ])
+                ],)
 
 bedroom = Room(
     name="myroom",

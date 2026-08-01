@@ -4,9 +4,9 @@ from rooms import ROOMS
 from PIL import Image, ImageTk
 from player import Player
 from dialogue_box import DialogueBox
-from room import Room
 import json
 from audiomanager import AudioManager
+from menu import Menu
 BASE_DIR = Path(__file__).resolve().parent
 class Game:
     def __init__(self):
@@ -16,7 +16,10 @@ class Game:
         self.root.iconphoto(True, icon)
         self.icon = icon
         self.setup_window()
-        # Rendering state
+        self.viewport_width = 320
+        self.viewport_height = 240
+        # VIEW_WIDTH = 320
+        # VIEW_HEIGHT = 240
         self.scale = 1.0
         self.camera_zoom = 1.0
         self.offset_x = 0
@@ -32,16 +35,18 @@ class Game:
         self.player_hitbox_debug = None
         self.interaction_debug = None
         self.exit_debug = []
-        self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
         self.keys_pressed = set()
         # Load assets
         self.audio = AudioManager()
         self.load_room("myroom")
         # Create game objects
         self.player = Player(self)
+        self.menu = Menu(self)
         # Draw everything once
         self.render_static()
         self.update_debug_hud()
+        self.state = "playing"
         self.update()
         self.typing = True
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
@@ -71,6 +76,13 @@ class Game:
             return
     def game_to_screen(self,x,y):
         return (self.offset_x+x*self.scale, self.offset_y+y*self.scale)
+    def ui_to_screen(self,x,y):
+        return(
+            self.offset_x + x * self.scale,
+            self.offset_y + y * self.scale
+        )
+    def world_to_screen(self, x, y):
+        return self.ui_to_screen(x,y)
     def update_scale(self):
         width = self.canvas.winfo_width()
         height = self.canvas.winfo_height()
@@ -79,11 +91,12 @@ class Game:
             return
 
         self.scale = min(
-            width / self.game_width,
-            height / self.game_height)
-
-        self.offset_x = (width - self.game_width * self.scale) / 2
-        self.offset_y = (height - self.game_height * self.scale) / 2
+            width / self.viewport_width,
+            height / self.viewport_height)
+        draw_width = int(self.viewport_width * self.scale)
+        draw_height = int(self.viewport_height * self.scale)
+        self.offset_x = (width - draw_width) // 2
+        self.offset_y = (height - draw_height) // 2
     def create_widgets(self):
         self.canvas = tk.Canvas(self.root, width=640, height=480, highlightthickness=0, bd=0, bg = "black")
         self.canvas.pack(fill="both", expand=True)
@@ -147,13 +160,15 @@ class Game:
         self.update_scale()
         self.render_static()
     def render_static(self):
-        self.update_scale()        # Game updates scale
         self.render_background()
+        self.menu.render_static()
         self.render_debug_static()
+        self.dialogue_box.render_static()
     def render_dynamic(self):
         if hasattr(self, "player"):
             self.player.render()
-
+        if self.menu.visible:
+            self.menu.render_dynamic()
         self.render_debug_dynamic()
         self.update_debug_hud()
     def rectangles_overlap(a,b):
@@ -298,12 +313,25 @@ class Game:
         self.root.bind("<z>", self.advance_dialogue)
         self.root.bind("<z>", self.interact)
         self.root.bind("<Configure>", self.on_resize)
+        self.root.bind("<c>", self.toggle_menu)
     def key_press(self, event):
         self.keys_pressed.add(event.keysym)
+        if self.state == 'menu':
+            if event.keysym == 'Up':
+                self.menu.move_up()
+            elif event.keysym == 'Down':
+                self.menu.move_down()
     def key_release(self, event):
         self.keys_pressed.discard(event.keysym)
+    def toggle_menu(self, event = None):
+        if self.state == "playing":
+            self.menu.open()
+            self.state = "menu"
+        elif self.state == "menu":
+            self.menu.close()
+            self.state = "playing"
     def update(self):  
-        if not self.typing:
+        if self.state == "playing":
             self.player.set_sprinting("x" in self.keys_pressed)
             moved = False
             if "Left" in self.keys_pressed:
@@ -320,6 +348,8 @@ class Game:
                 moved = True
             if not moved:
                 self.player.animation.stop()
+        else:
+            self.player.animation.stop()
         self.check_room_transitions()
         self.player.animation.update()
         self.render_dynamic()
