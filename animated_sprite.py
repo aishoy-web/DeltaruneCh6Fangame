@@ -1,28 +1,45 @@
-from pathlib import Path
 from PIL import Image
 class AnimatedSprite:
     def __init__(self,
                  sprite_sheet_path,
-                 frame_width,
-                 frame_height,
-                 animations,
-                 animation_speed=8):
+                 cell_width = 24,
+                 cell_height=44,
+                 sprite_width = 19,
+                 sprite_height = 37,
+                 sheet_offset_x=7,
+                 sheet_offset_y=24,
+                 animations = None,
+                 animation_speed=7):
+        if animations is None:
+            animations = {"down": (0, 0, 4),"left": (1, 0, 4),"right": (2, 0, 4),"up": (3, 0, 4)}
         self.sheet = Image.open(sprite_sheet_path).convert("RGBA")
-        self.frame_width = frame_width
-        self.frame_height = frame_height
+        self.cell_width = cell_width
+        self.cell_height = cell_height
+        self.sprite_width = sprite_width
+        self.sprite_height = sprite_height
+        self.sheet_offset_x = sheet_offset_x
+        self.sheet_offset_y = sheet_offset_y    
         self.animation_speed = animation_speed
         self.animations = {}
-        for name, (row, frame_count) in animations.items():
+        transparent_color = (195,134,255) # Comes from the spritesheet background, don't touch
+        for name, (row, start_col, frame_count) in animations.items():
             frames = []
             for col in range(frame_count):
-                left = col * frame_width
-                top = row * frame_height
+                left =  left = self.sheet_offset_x + (start_col + col) * self.cell_width
+                top = self.sheet_offset_y + row * self.cell_height
                 frame = self.sheet.crop((
                     left,
                     top,
-                    left + frame_width,
-                    top + frame_height,
+                    left + self.sprite_width,
+                    top + self.sprite_height,
                 ))
+                frame = frame.convert("RGBA")
+                pixels = frame.load()
+                for y in range(frame.height):
+                    for x in range(frame.width):
+                        r,g,b,a = pixels[x,y]
+                        if (r,g,b) == transparent_color:
+                            pixels[x,y] = (0,0,0,0)
                 frames.append(frame)
             self.animations[name] = frames
         self.current_animation = "down"
@@ -34,7 +51,6 @@ class AnimatedSprite:
             raise ValueError(f"Unknown animation: {animation_name}")
         self.playing = True
         if animation_name != self.current_animation:
-            # self.playing = True
             self.current_animation = animation_name
             self.current_frame = 0
             self.timer = 0

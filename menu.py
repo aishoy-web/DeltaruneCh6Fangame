@@ -17,14 +17,16 @@ class Menu:
         ]
 
         self.selected = 0
+        self.soul_scale = 2
         self.cursor_image = Image.open(cursor_path)
-        self.cursor_photo = ImageTk.PhotoImage(self.cursor_image)
+        self.cursor_scale = self.cursor_image.resize((int(self.cursor_image.width * self.game.scale*self.soul_scale),int(self.cursor_image.height * self.game.scale*self.soul_scale)), Image.Resampling.NEAREST)
+        self.cursor_photo = ImageTk.PhotoImage(self.cursor_scale)
     def create_widgets(self):
         self.box = self.game.canvas.create_rectangle(
             0, 0, 0, 0,
             fill="black",
             outline="white",
-            width=4
+            width=10,
         )
         self.canvas_items.append(self.box)
         self.game.canvas.itemconfigure(self.box, state="hidden")
@@ -32,7 +34,7 @@ class Menu:
         self.cursor = self.game.canvas.create_image(
             0, 0,
             image=self.cursor_photo,
-            anchor="nw"
+            anchor="nw",
         )
         self.canvas_items.append(self.cursor)
         self.game.canvas.itemconfigure(self.cursor, state="hidden")
@@ -43,19 +45,19 @@ class Menu:
                 0,
                 text=option,
                 anchor="nw",
-                font=("Determination Mono Web", 16),
-                fill="white"
+                font=("Determination Mono Web", 45),
+                fill="white",
             )
 
             self.option_text.append(text)
             self.canvas_items.append(text)
             self.game.canvas.itemconfigure(text, state="hidden")
     def layout_widgets(self):
-        x1, y1 = self.game.ui_to_screen(8, 8)
-        x2, y2 = self.game.ui_to_screen(112, 104)
+        x1, y1 = self.game.ui_to_screen(17, 85.5) #Box coords, don't touch
+        x2, y2 = self.game.ui_to_screen(85.5, 157)
         self.game.canvas.coords(self.box, x1, y1, x2, y2)
         for i, text in enumerate(self.option_text):
-                    x, y = self.game.ui_to_screen(32, 10 + i * 18)
+                    x, y = self.game.ui_to_screen(41, 94 + i * 18) #Text coords, done
                     self.game.canvas.coords(text, x, y)
         self.render_dynamic()
     def open(self):
@@ -70,13 +72,13 @@ class Menu:
     def move_up(self):
         if self.selected > 0:
             self.selected -= 1
-            print(self.selected)
+            # print(self.selected)
             self.render_dynamic()
 
     def move_down(self):
         if self.selected < len(self.options) -1:
             self.selected += 1
-            print(self.selected)
+            # print(self.selected)
             self.render_dynamic()
 
     def render_static(self):
@@ -84,6 +86,6 @@ class Menu:
             self.create_widgets()
         self.layout_widgets()
     def render_dynamic(self):
-        cursor_y = 18 + self.selected * 18
-        x, y = self.game.ui_to_screen(18, cursor_y)
+        cursor_y = 98 + self.selected * 18 #Soul cursor, don't touch
+        x, y = self.game.ui_to_screen(28, cursor_y)
         self.game.canvas.coords(self.cursor, x, y)

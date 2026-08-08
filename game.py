@@ -18,9 +18,9 @@ class Game:
         self.setup_window()
         self.viewport_width = 320
         self.viewport_height = 240
-        # VIEW_WIDTH = 320
-        # VIEW_HEIGHT = 240
         self.scale = 1.0
+        self.camera_x = 0
+        self.camera_y = 0
         self.camera_zoom = 1.0
         self.offset_x = 0
         self.offset_y = 0
@@ -35,7 +35,7 @@ class Game:
         self.player_hitbox_debug = None
         self.interaction_debug = None
         self.exit_debug = []
-        self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
         self.keys_pressed = set()
         # Load assets
         self.audio = AudioManager()
@@ -56,7 +56,7 @@ class Game:
         self.dialogue_index = 0 
         self.dialogue_box = DialogueBox(self)
     def setup_window(self):
-        self.root.title("Deltarune Chapter 6")
+        self.root.title("DELTARUNE Chapter 6")
         self.root.geometry("320x240")
         self.root.configure(bg="black")
         self.fullscreen = False
@@ -82,7 +82,10 @@ class Game:
             self.offset_y + y * self.scale
         )
     def world_to_screen(self, x, y):
-        return self.ui_to_screen(x,y)
+        return (
+            self.offset_x + (x - self.camera_x) * self.scale,
+            self.offset_y + (y - self.camera_y) * self.scale
+        )
     def update_scale(self):
         width = self.canvas.winfo_width()
         height = self.canvas.winfo_height()
@@ -169,6 +172,7 @@ class Game:
             self.player.render()
         if self.menu.visible:
             self.menu.render_dynamic()
+            self.canvas.tag_raise("menu")
         self.render_debug_dynamic()
         self.update_debug_hud()
     def rectangles_overlap(a,b):
@@ -252,10 +256,12 @@ class Game:
             self.background_sprite,
             image=self.background_image)
 
+            x, y = self.world_to_screen(0,0)
+
             self.canvas.coords(
                 self.background_sprite,
-                self.offset_x,
-                self.offset_y)
+                x,
+                y)
     def type_text(self):
         current = self.room.dialogue[self.dialogue_index]
         voice = current.voice
@@ -330,7 +336,18 @@ class Game:
         elif self.state == "menu":
             self.menu.close()
             self.state = "playing"
-    def update(self):  
+    def update(self):
+        self.camera_x = self.player.x - self.viewport_width / 2
+        self.camera_y = self.player.y - self.viewport_height / 2
+        self.camera_x = max(
+            0,
+            min(self.camera_x, self.game_width - self.viewport_width)
+        )
+
+        self.camera_y = max(
+            0,
+            min(self.camera_y, self.game_height - self.viewport_height)
+        )
         if self.state == "playing":
             self.player.set_sprinting("x" in self.keys_pressed)
             moved = False
@@ -346,13 +363,15 @@ class Game:
             if "Down" in self.keys_pressed:
                 self.player.move_down()
                 moved = True
-            if not moved:
+            if moved:
+                self.player.animation.play(self.player.facing)
+            else:
                 self.player.animation.stop()
         else:
             self.player.animation.stop()
         self.check_room_transitions()
-        self.player.animation.update()
         self.render_dynamic()
-        self.root.after(16, self.update) # Framerate, lower number = higher framerate
+        self.player.animation.update()
+        self.root.after(32, self.update) # Framerate, lower number = higher framerate
     def run(self):
         self.root.mainloop()

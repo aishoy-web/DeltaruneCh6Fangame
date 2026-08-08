@@ -3,33 +3,37 @@ from PIL import Image, ImageTk
 from animated_sprite import AnimatedSprite
 BASE_DIR = Path(__file__).parent
 sprite_path = BASE_DIR/"sprites"/"player"/"spr_krisd"/"spr_krisd_0.png"
-sprite_sheet_path = BASE_DIR/"sprites"/"player"/"kris_spritesheet.png"
+sprite_sheet_path = BASE_DIR/"sprites"/"player"/"kris_spritesheet_1+2.png"
 class Player:
     def __init__(self, game):
         self.game = game
         self.room = game.room
         self.x = 160
         self.y = 110
-        self.walk_speed = 1.6 # Controls walking speed
+        self.walk_speed = 3.1 # Controls walking speed
         self.run_speed = self.walk_speed * 1.75
         self.speed = self.walk_speed
         self.photo = None
         self.canvas_sprite = None
         self.animation = AnimatedSprite(
             sprite_sheet_path,
-            frame_width=32,
-            frame_height=32,
+            cell_width=24,
+            cell_height=44,
+            sprite_width=19,
+            sprite_height=37,
+            sheet_offset_x=7,
+            sheet_offset_y = 24,
             animations={
-                "down": (0,4),
-                "left": (1,4),
-                "right": (2,4),
-                "up": (3,4)},
-                animation_speed=8
+                "down": (0, 0, 4),
+                "left": (1, 0, 4),
+                "right": (2, 0, 4),
+                "up": (3, 0, 4)},
+                animation_speed=7
         )
         self.hitbox_width = 15
         self.hitbox_height = 6
-        self.hitbox_offset_x = 5
-        self.hitbox_offset_y = 40
+        self.hitbox_offset_x = 2.5
+        self.hitbox_offset_y = 32
         self.last_scale = None
         self.facing = "down"
         if self.game.debug_mode:
@@ -72,9 +76,6 @@ class Player:
         new_x = self.x -self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
-            self.animation.play("left")
-        else:
-            self.animation.stop()
         self.render()
 
     def move_right(self):
@@ -82,9 +83,6 @@ class Player:
         new_x = self.x + self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
-            self.animation.play("right")
-        else:
-            self.animation.stop()
         self.render()
 
     def move_up(self):
@@ -92,9 +90,6 @@ class Player:
         new_y = self.y - self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
-            self.animation.play("up")
-        else:
-            self.animation.stop()
         self.render()
 
     def move_down(self):
@@ -102,9 +97,6 @@ class Player:
         new_y = self.y + self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
-            self.animation.play("down")
-        else:
-            self.animation.stop()
         self.render()
     
     def get_interaction_box(self):
