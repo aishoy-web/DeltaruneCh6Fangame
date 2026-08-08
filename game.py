@@ -37,6 +37,7 @@ class Game:
         self.exit_debug = []
         self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
         self.keys_pressed = set()
+        self.direction_keys = []
         # Load assets
         self.audio = AudioManager()
         self.load_room("myroom")
@@ -322,6 +323,10 @@ class Game:
         self.root.bind("<c>", self.toggle_menu)
     def key_press(self, event):
         self.keys_pressed.add(event.keysym)
+        if event.keysym in ("Left","Right","Up","Down"):
+            if event.keysym in self.direction_keys:
+                self.direction_keys.remove(event.keysym)
+            self.direction_keys.append(event.keysym)
         if self.state == 'menu':
             if event.keysym == 'Up':
                 self.menu.move_up()
@@ -329,10 +334,13 @@ class Game:
                 self.menu.move_down()
     def key_release(self, event):
         self.keys_pressed.discard(event.keysym)
+        if event.keysym in self.direction_keys:
+            self.direction_keys.remove(event.keysym)
     def toggle_menu(self, event = None):
         if self.state == "playing":
             self.menu.open()
             self.state = "menu"
+            self.player.animation.stop()
         elif self.state == "menu":
             self.menu.close()
             self.state = "playing"
@@ -363,12 +371,12 @@ class Game:
             if "Down" in self.keys_pressed:
                 self.player.move_down()
                 moved = True
+            if self.direction_keys:
+                self.player.facing = self.direction_keys[0].lower()
             if moved:
                 self.player.animation.play(self.player.facing)
             else:
                 self.player.animation.stop()
-        else:
-            self.player.animation.stop()
         self.check_room_transitions()
         self.render_dynamic()
         self.player.animation.update()

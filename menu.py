@@ -89,3 +89,5 @@ class Menu:
         cursor_y = 98 + self.selected * 18 #Soul cursor, don't touch
         x, y = self.game.ui_to_screen(28, cursor_y)
         self.game.canvas.coords(self.cursor, x, y)
+        for item in self.canvas_items:
+            self.game.canvas.tag_raise(item)

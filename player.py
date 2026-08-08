@@ -76,28 +76,24 @@ class Player:
         new_x = self.x -self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
-        self.render()
 
     def move_right(self):
         self.facing = "right"
         new_x = self.x + self.speed
         if self.can_move_to(new_x, self.y):
             self.x = new_x
-        self.render()
 
     def move_up(self):
         self.facing = "up"
         new_y = self.y - self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
-        self.render()
 
     def move_down(self):
         self.facing = "down"
         new_y = self.y + self.speed
         if self.can_move_to(self.x, new_y):
             self.y = new_y
-        self.render()
     
     def get_interaction_box(self):
         size = 16 # Change this to increase or decrease the size of the interaction box
