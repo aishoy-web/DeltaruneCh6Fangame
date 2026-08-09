@@ -12,7 +12,8 @@ class Player:
         self.y = 110
         self.walk_speed = 3.1 # Controls walking speed
         self.run_speed = self.walk_speed * 1.75
-        self.speed = self.walk_speed
+        self.speed = 0
+        self.acceleration = 0.4
         self.photo = None
         self.canvas_sprite = None
         self.animation = AnimatedSprite(
@@ -28,8 +29,10 @@ class Player:
                 "left": (1, 0, 4),
                 "right": (2, 0, 4),
                 "up": (3, 0, 4)},
-                animation_speed=7
+                animation_speed = 6.5
         )
+        self.walk_animation_speed = 6.5
+        self.run_animation_speed = self.walk_animation_speed * .5
         self.hitbox_width = 15
         self.hitbox_height = 6
         self.hitbox_offset_x = 2.5
@@ -66,11 +69,11 @@ class Player:
     def teleport(self,x,y):
         self.x = x
         self.y = y
-    def set_sprinting(self, sprinting):
-        if sprinting:
-            self.speed = self.run_speed
-        else:
-            self.speed = self.walk_speed
+    # def set_sprinting(self, sprinting):
+    #     if sprinting:
+    #         self.speed = self.run_speed
+    #     else:
+    #         self.speed = self.walk_speed
     def move_left(self):
         self.facing = "left"
         new_x = self.x -self.speed
@@ -129,8 +132,7 @@ class Player:
         frame = self.animation.get_frame()
         scaled = frame.resize((int(frame.width * self.game.scale),int(frame.height * self.game.scale)),Image.Resampling.NEAREST)
         self.photo = ImageTk.PhotoImage(scaled)
-        canvas_x = self.game.offset_x+self.x*self.game.scale
-        canvas_y = self.game.offset_y+self.y*self.game.scale
+        canvas_x, canvas_y = self.game.game_to_screen(self.x, self.y)
         if self.canvas_sprite is None:
             self.canvas_sprite = self.game.canvas.create_image(
                     canvas_x,

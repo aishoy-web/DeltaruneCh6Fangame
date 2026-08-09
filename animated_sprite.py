@@ -45,10 +45,14 @@ class AnimatedSprite:
         self.current_animation = "down"
         self.current_frame = 0
         self.timer = 0
-        self.playing = False
+        self.rest_frames = (0,2)
+        self.stop_at_rest_frame = False
     def play(self, animation_name):
         if animation_name not in self.animations:
             raise ValueError(f"Unknown animation: {animation_name}")
+        if not self.playing:
+            self.current_frame = 1
+            self.timer = 0
         self.playing = True
         if animation_name != self.current_animation:
             self.current_animation = animation_name
@@ -62,13 +66,32 @@ class AnimatedSprite:
             self.timer = 0
             frame_count = len(self.animations[self.current_animation])
             self.current_frame += 1
-            self.current_frame %= frame_count
+            if self.current_frame >= frame_count:
+                self.current_frame = 0
+            if (self.stop_at_rest_frame and self.current_frame in self.rest_frames):
+                self.playing = False
+                self.stop_at_rest_frame = False
         # print(self.current_animation, self.current_frame) #Uncomment to see which frames of animation are playing.
     def get_frame(self):
         return self.animations[self.current_animation][self.current_frame]
+    def finish_at_rest_frame(self):
+        if self.current_frame in (0, 1):
+            self.current_frame = 0
+        else:
+            self.current_frame = 2
+        self.playing = False
+        self.timer = 0
     def stop(self):
         self.playing = False
         self.current_frame = 0
         self.timer = 0
+        self.stop_at_rest_frame = False
     def start(self):
         self.playing = True
+    def is_finished(self):
+        return(
+            self.current_frame == len(self.animations[self.current_animation]) - 1
+            and self.timer == 0
+        )
+    def finish_current_cyle(self):
+        self.finish_when_cycle_ends = True

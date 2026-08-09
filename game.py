@@ -76,17 +76,11 @@ class Game:
         if event.widget != self.root:
             return
     def game_to_screen(self,x,y):
-        return (self.offset_x+x*self.scale, self.offset_y+y*self.scale)
+        return (self.offset_x + (x - self.camera_x) * self.scale, self.offset_y + (y - self.camera_y) * self.scale)
     def ui_to_screen(self,x,y):
         return(
             self.offset_x + x * self.scale,
-            self.offset_y + y * self.scale
-        )
-    def world_to_screen(self, x, y):
-        return (
-            self.offset_x + (x - self.camera_x) * self.scale,
-            self.offset_y + (y - self.camera_y) * self.scale
-        )
+            self.offset_y + y * self.scale)
     def update_scale(self):
         width = self.canvas.winfo_width()
         height = self.canvas.winfo_height()
@@ -101,8 +95,22 @@ class Game:
         draw_height = int(self.viewport_height * self.scale)
         self.offset_x = (width - draw_width) // 2
         self.offset_y = (height - draw_height) // 2
+    def update_camera(self):
+        if self.game_width > self.viewport_width:
+            target_x = self.player.x - self.viewport_width / 2
+            max_x = self.game_width - self.viewport_width
+            self.camera_x = max(0, min(target_x, max_x))
+        else:
+            self.camera_x = 0
+
+        if self.game_height > self.viewport_height:
+            target_y = self.player.y - self.viewport_height / 2
+            max_y = self.game_height - self.viewport_height
+            self.camera_y = max(0, min(target_y, max_y))
+        else:
+            self.camera_y = 0
     def create_widgets(self):
-        self.canvas = tk.Canvas(self.root, width=640, height=480, highlightthickness=0, bd=0, bg = "black")
+        self.canvas = tk.Canvas(self.root, width=320, height=240, highlightthickness=0, bd=0, bg = "black")
         self.canvas.pack(fill="both", expand=True)
         self.debug_text = self.canvas.create_text(
             5,
@@ -150,17 +158,11 @@ class Game:
         self.player.x = exit.spawn_x
         self.player.y = exit.spawn_y
         self.render_static()
-    def on_resize(self,event = None):
-        # Ignore tiny events while the window is initializing
+    def on_resize(self, event=None):
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
         if canvas_width < 2 or canvas_height < 2:
             return
-        self.scale = min(canvas_width/self.game_width, canvas_height/self.game_height)
-        draw_width = int(self.game_width * self.scale)
-        draw_height = int(self.game_height * self.scale)
-        self.offset_x = (canvas_width - draw_width) // 2
-        self.offset_y = (canvas_height - draw_height) // 2
         self.update_scale()
         self.render_static()
     def render_static(self):
@@ -169,6 +171,7 @@ class Game:
         self.render_debug_static()
         self.dialogue_box.render_static()
     def render_dynamic(self):
+        self.render_background_dynamic()
         if hasattr(self, "player"):
             self.player.render()
         if self.menu.visible:
@@ -176,6 +179,7 @@ class Game:
             self.canvas.tag_raise("menu")
         self.render_debug_dynamic()
         self.update_debug_hud()
+        self.canvas.tag_raise(self.debug_text)
     def rectangles_overlap(a,b):
         left1, top1, right1, bottom1 = a
         left2, top2, right2, bottom2 = b
@@ -187,38 +191,44 @@ class Game:
     def render_debug_static(self):
         if not self.debug_mode:
             return
-        for rect in self.collision_debug:
+        for rect, left, top, right, bottom in self.collision_debug:
             self.canvas.delete(rect)
         self.collision_debug.clear()
         for left, top, right, bottom in self.room.collisions:
             rect = self.canvas.create_rectangle(
-                left * self.scale + self.offset_x,
-                top * self.scale + self.offset_y,
-                right * self.scale + self.offset_x,
-                bottom * self.scale + self.offset_y,
+                0, 0, 0, 0,
                 outline="red",
                 width=2,
                 tags="debug")
-            self.collision_debug.append(rect)
+            self.collision_debug.append(
+                (rect, left, top, right, bottom))
         for exit in self.room.exits:
             left = exit.x
             top = exit.y
             right = exit.x + exit.width
             bottom = exit.y + exit.height
-
             rect = self.canvas.create_rectangle(
-                left * self.scale + self.offset_x,
-                top * self.scale + self.offset_y,
-                right * self.scale + self.offset_x,
-                bottom * self.scale + self.offset_y,
+                0, 0, 0, 0,
                 outline="green",
                 width=2,
-                tags="debug",)
-            self.collision_debug.append(rect)
+                tags="debug")
+            self.collision_debug.append(
+                (rect, left, top, right, bottom))
     def render_debug_dynamic(self):
         if not self.debug_mode:
             return
+        for rect, left, top, right, bottom in self.collision_debug:
+            left_screen, top_screen = self.game_to_screen(left, top)
+            right_screen, bottom_screen = self.game_to_screen(right, bottom)
+            self.canvas.coords(
+                rect,
+                left_screen,
+                top_screen,
+                right_screen,
+                bottom_screen)
         left, top, right, bottom = self.player.get_interaction_box()
+        left_screen, top_screen = self.game_to_screen(left, top)
+        right_screen, bottom_screen = self.game_to_screen(right, bottom)
         if self.interaction_debug is None:
             self.interaction_debug = self.canvas.create_rectangle(
                 0, 0, 0, 0,
@@ -227,10 +237,10 @@ class Game:
                 tags="debug")
         self.canvas.coords(
             self.interaction_debug,
-            left * self.scale + self.offset_x,
-            top * self.scale + self.offset_y,
-            right * self.scale + self.offset_x,
-            bottom * self.scale + self.offset_y)
+            left_screen,
+            top_screen,
+            right_screen,
+            bottom_screen)
     def update_debug_hud(self):
         if not self.debug_mode:
             self.canvas.itemconfigure(self.debug_text, state="hidden")
@@ -257,12 +267,15 @@ class Game:
             self.background_sprite,
             image=self.background_image)
 
-            x, y = self.world_to_screen(0,0)
+            x, y = self.game_to_screen(0,0)
 
             self.canvas.coords(
                 self.background_sprite,
                 x,
                 y)
+    def render_background_dynamic(self):
+        x, y = self.game_to_screen(0,0)
+        self.canvas.coords(self.background_sprite, x, y)
     def type_text(self):
         current = self.room.dialogue[self.dialogue_index]
         voice = current.voice
@@ -339,26 +352,24 @@ class Game:
     def toggle_menu(self, event = None):
         if self.state == "playing":
             self.menu.open()
-            self.state = "menu"
-            self.player.animation.stop()
+            self.state = "menu" 
+            self.player.animation.finish_at_rest_frame()
         elif self.state == "menu":
             self.menu.close()
             self.state = "playing"
     def update(self):
-        self.camera_x = self.player.x - self.viewport_width / 2
-        self.camera_y = self.player.y - self.viewport_height / 2
-        self.camera_x = max(
-            0,
-            min(self.camera_x, self.game_width - self.viewport_width)
-        )
-
-        self.camera_y = max(
-            0,
-            min(self.camera_y, self.game_height - self.viewport_height)
-        )
         if self.state == "playing":
-            self.player.set_sprinting("x" in self.keys_pressed)
-            moved = False
+            moved = bool(self.keys_pressed & {"Left","Right","Up","Down"})
+            if moved:
+                if "x" in self.keys_pressed:
+                    self.player.speed = min(self.player.speed + self.player.acceleration,self.player.run_speed)
+                    self.player.animation.animation_speed = self.player.run_animation_speed
+                else:
+                    self.player.speed = self.player.walk_speed
+                    self.player.animation.animation_speed = self.player.walk_animation_speed
+                # print(self.player.speed)
+            else:
+                self.player.speed = 0
             if "Left" in self.keys_pressed:
                 self.player.move_left()
                 moved = True
@@ -378,6 +389,7 @@ class Game:
             else:
                 self.player.animation.stop()
         self.check_room_transitions()
+        self.update_camera()
         self.render_dynamic()
         self.player.animation.update()
         self.root.after(32, self.update) # Framerate, lower number = higher framerate
