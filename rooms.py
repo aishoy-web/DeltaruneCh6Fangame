@@ -32,6 +32,7 @@ hallway = Room(
             destination="myroom",
             spawn_x=155,
             spawn_y=165,
+            facing_direction="up"
         ),
         Exit(
             x=420,
@@ -41,6 +42,7 @@ hallway = Room(
             destination="torhouse",
             spawn_x=145,
             spawn_y=80,
+            facing_direction="down",
         ),
     ],
 )
@@ -75,7 +77,8 @@ bedroom = Room(
                 height=20,
                 destination="myhallway",
                 spawn_x=290,
-                spawn_y=105)])
+                spawn_y=105,
+                facing_direction="down")])
 livingroom = Room(
     name="torhouse",
     background="bg_torhouse_bg.png",
@@ -97,7 +100,8 @@ livingroom = Room(
                 height=20,
                 destination="myhallway",
                 spawn_x=430,
-                spawn_y=100)]
+                spawn_y=100,
+                facing_direction="down")]
 
 )
 

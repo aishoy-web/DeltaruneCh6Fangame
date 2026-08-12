@@ -1,4 +1,5 @@
 import tkinter as tk
+import time
 from pathlib import Path
 from rooms import ROOMS
 from PIL import Image, ImageTk
@@ -35,8 +36,17 @@ class Game:
         self.player_hitbox_debug = None
         self.interaction_debug = None
         self.exit_debug = []
-        self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
         self.widescreen_mode = False
+        self.transitioning = False
+        self.fade_alpha = 0
+        self.fade_duration = 250 #milliseconds for half the fade transition
+        self.fade_start_time = None
+        self.fade_mode = None
+        self.pending_room = None
+        self.pending_spawn = None
+        self.pending_facing = None
+        self.was_moving = False
         self.keys_pressed = set()
         self.direction_keys = []
         # Load assets
@@ -127,8 +137,14 @@ class Game:
         )
         self.background_sprite = None
         self.player_sprite = None
-    def load_room(self, room_id):
-        room = ROOMS[room_id]
+        self.fade_overlay = self.canvas.create_image(
+            0,
+            0,
+            anchor = "nw"
+        )
+        self.fade_photo = None
+    def load_room(self, room_id, facing_direction = None):
+        room = ROOMS[room_id]   
         self.room = room
         background_path = BASE_DIR/"room_backgrounds"/room.background
 
@@ -137,20 +153,19 @@ class Game:
         self.background_pil = Image.open(background_path)
         self.game_width = self.background_pil.width
         self.game_height = self.background_pil.height
-        self.on_resize()
+        self.update_scale()
         self.background_image = ImageTk.PhotoImage(self.background_pil)
         if self.background_sprite is None:
             self.background_sprite = self.canvas.create_image(0,0, image = self.background_image, anchor = "nw")
         else: 
             self.canvas.itemconfig(self.background_sprite, image=self.background_image)
-        
-        for rect in self.collision_debug:
-            self.canvas.delete(rect)
-        self.collision_debug.clear()
-        
         if hasattr(self, "player"):
             self.canvas.tag_raise(self.player.canvas_sprite)
             self.player.room = room
+            if facing_direction is not None:
+                self.player.facing = facing_direction
+                self.player.animation.play(facing_direction)
+                self.player.animation.stop()
         if room.music:
             self.audio.play_music(room.music)
     def check_room_transitions(self):
@@ -158,18 +173,16 @@ class Game:
             if self.player.is_touching_exit(exit):
                 self.change_room(exit)
                 break
-    def change_room(self,exit):
-        self.load_room(exit.destination)
-        self.player.x = exit.spawn_x
-        self.player.y = exit.spawn_y
-    #     print(
-    #     f"Room: {self.room.name}, "
-    #     f"Player: ({self.player.x}, {self.player.y}), "
-    #     f"Camera: ({self.camera_x}, {self.camera_y}), "
-    #     f"Scale: {self.scale}, "
-    #     f"Offset: ({self.offset_x}, {self.offset_y})"
-    # )
-        self.render_static()
+    def change_room(self, exit):
+        if self.transitioning:
+            return
+        self.transitioning = True
+        self.fade_mode = "out"
+        self.fade_alpha = 0
+        self.fade_start_time = time.perf_counter()
+        self.pending_room = exit.destination
+        self.pending_spawn = (exit.spawn_x, exit.spawn_y)
+        self.pending_facing = exit.facing_direction
     def on_resize(self, event=None):
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
@@ -177,6 +190,8 @@ class Game:
             return
         self.update_scale()
         self.render_static()
+        if self.fade_alpha > 0:
+            self.render_fade()
     def render_static(self):
         self.render_background()
         self.menu.render_static()
@@ -192,6 +207,35 @@ class Game:
         self.render_debug_dynamic()
         self.update_debug_hud()
         self.canvas.tag_raise(self.debug_text)
+        self.render_fade()
+    def render_fade(self):
+        if self.fade_alpha <= 0:
+            self.canvas.itemconfigure(
+                self.fade_overlay,
+                state="hidden"
+            )
+            return
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        if width < 2 or height < 2:
+            return
+        fade_image = Image.new(
+            "RGBA",
+            (width, height),
+            (0, 0, 0, self.fade_alpha)
+        )
+        self.fade_photo = ImageTk.PhotoImage(fade_image)
+        self.canvas.itemconfigure(
+            self.fade_overlay,
+            image=self.fade_photo,
+            state="normal"
+        )
+        self.canvas.coords(
+            self.fade_overlay,
+            0,
+            0
+        )
+        self.canvas.tag_raise(self.fade_overlay)
     def rectangles_overlap(a,b):
         left1, top1, right1, bottom1 = a
         left2, top2, right2, bottom2 = b
@@ -374,7 +418,33 @@ class Game:
         elif self.state == "menu":
             self.menu.close()
             self.state = "playing"
+    def update_transition(self):
+        elapsed = (time.perf_counter() - self.fade_start_time) * 1000
+        progress = min(elapsed / self.fade_duration, 1.0)
+        if self.fade_mode == "out":
+            self.fade_alpha = int(progress * 255)
+            if progress >= 1.0:
+                self.fade_alpha = 255
+                self.load_room(
+                    self.pending_room,
+                    self.pending_facing)
+                self.player.x, self.player.y = self.pending_spawn
+                self.update_camera()
+                self.render_static()
+                self.fade_mode = "in"
+                self.fade_start_time = time.perf_counter()
+        elif self.fade_mode == "in":
+            self.fade_alpha = int(255 * (1.0 - progress))
+            if progress >= 1.0:
+                self.fade_alpha = 0
+                self.fade_mode = None
+                self.transitioning = False
+        self.render_dynamic()
     def update(self):
+        if self.transitioning:
+            self.update_transition()
+            self.root.after(32, self.update)
+            return
         if self.state == "playing":
             moved = bool(self.keys_pressed & {"Left","Right","Up","Down"})
             started_moving = moved and not self.was_moving
