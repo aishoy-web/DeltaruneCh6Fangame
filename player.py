@@ -10,7 +10,7 @@ class Player:
         self.room = game.room
         self.x = 160
         self.y = 110
-        self.walk_speed = 3.1 # Controls walking speed
+        self.walk_speed = 3 # Controls walking speed
         self.run_speed = self.walk_speed * 1.75
         self.speed = 0
         self.acceleration = 0.4

@@ -10,6 +10,7 @@ class Exit:
     destination: str
     spawn_x: int
     spawn_y: int
+    # facing direction
     # transition: str
     # sound: str
     # required_flag: str

@@ -23,14 +23,27 @@ hallway = Room(
         action="dialogue",
         data="obj_kris_bedroom_bed_0",),],
     dialogue=[Dialogue(voice=None,text_id="obj_kris_bedroom_bed_0",choices=None,scene_id=None,sound_effect=None)],
-    exits=[Exit(x=290,
-                y=110,
-                width=20,
-                height=20,
-                destination="myroom",
-                spawn_x=150,
-                spawn_y=165),
-                ],)
+    exits=[
+        Exit(
+            x=290,
+            y=110,
+            width=20,
+            height=20,
+            destination="myroom",
+            spawn_x=155,
+            spawn_y=165,
+        ),
+        Exit(
+            x=420,
+            y=100,
+            width=40,
+            height=20,
+            destination="torhouse",
+            spawn_x=145,
+            spawn_y=80,
+        ),
+    ],
+)
 
 bedroom = Room(
     name="myroom",
@@ -61,13 +74,33 @@ bedroom = Room(
                 width=40,
                 height=20,
                 destination="myhallway",
-                spawn_x=285,
-                spawn_y=95)])
-livingroom = Room(name="torhouse", background= "bg_torhouse_bg",
-                  collisions=[
-                      (0,0,0,0), #bottom wall
-                      ])
+                spawn_x=290,
+                spawn_y=105)])
+livingroom = Room(
+    name="torhouse",
+    background="bg_torhouse_bg.png",
+    collisions=[
+        (70, 200, 650, 240), # Bottom wall
+        (173,40,210,161), # Fridge wall
+        (230,100,345,141), # Kitchen wall
+        (115,40,140,161), # Top left wall
+        (345,100,420,166), # Phone wall
+        (475,130,520,157.5), # TV stand
+        (430,120,580,140) # Top backup wall, hopefully the player never touches this
+    ],
+    music = None,
+    interactable_objects= None,
+    dialogue= None,
+    exits=[Exit(x=145,
+                y=70,
+                width=40,
+                height=20,
+                destination="myhallway",
+                spawn_x=430,
+                spawn_y=100)]
+
+)
 
 ROOMS = {"myroom": bedroom, # Keep this room dictionary at the end of rooms.py so other files can reference it.
          "myhallway": hallway,
-         "torhouse_bg": livingroom,}
+         "torhouse": livingroom,}

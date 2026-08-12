@@ -35,7 +35,8 @@ class Game:
         self.player_hitbox_debug = None
         self.interaction_debug = None
         self.exit_debug = []
-        self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.widescreen_mode = False
         self.keys_pressed = set()
         self.direction_keys = []
         # Load assets
@@ -96,15 +97,19 @@ class Game:
         self.offset_x = (width - draw_width) // 2
         self.offset_y = (height - draw_height) // 2
     def update_camera(self):
+        sprite_width = self.player.animation.sprite_width
+        sprite_height = self.player.animation.sprite_height
+        player_center_x = self.player.x + sprite_width / 2
+        player_center_y = self.player.y + sprite_height / 2
         if self.game_width > self.viewport_width:
-            target_x = self.player.x - self.viewport_width / 2
+            target_x = player_center_x - self.viewport_width / 2
             max_x = self.game_width - self.viewport_width
             self.camera_x = max(0, min(target_x, max_x))
         else:
             self.camera_x = 0
 
         if self.game_height > self.viewport_height:
-            target_y = self.player.y - self.viewport_height / 2
+            target_y = player_center_y - self.viewport_height / 2
             max_y = self.game_height - self.viewport_height
             self.camera_y = max(0, min(target_y, max_y))
         else:
@@ -157,6 +162,13 @@ class Game:
         self.load_room(exit.destination)
         self.player.x = exit.spawn_x
         self.player.y = exit.spawn_y
+    #     print(
+    #     f"Room: {self.room.name}, "
+    #     f"Player: ({self.player.x}, {self.player.y}), "
+    #     f"Camera: ({self.camera_x}, {self.camera_y}), "
+    #     f"Scale: {self.scale}, "
+    #     f"Offset: ({self.offset_x}, {self.offset_y})"
+    # )
         self.render_static()
     def on_resize(self, event=None):
         canvas_width = self.canvas.winfo_width()
@@ -220,6 +232,11 @@ class Game:
         for rect, left, top, right, bottom in self.collision_debug:
             left_screen, top_screen = self.game_to_screen(left, top)
             right_screen, bottom_screen = self.game_to_screen(right, bottom)
+    #         print(
+    #     f"Room coords: ({left}, {top}, {right}, {bottom}) "
+    #     f"-> Screen coords: "
+    #     f"({left_screen}, {top_screen}, {right_screen}, {bottom_screen})"
+    # )
             self.canvas.coords(
                 rect,
                 left_screen,
@@ -360,16 +377,9 @@ class Game:
     def update(self):
         if self.state == "playing":
             moved = bool(self.keys_pressed & {"Left","Right","Up","Down"})
-            if moved:
-                if "x" in self.keys_pressed:
-                    self.player.speed = min(self.player.speed + self.player.acceleration,self.player.run_speed)
-                    self.player.animation.animation_speed = self.player.run_animation_speed
-                else:
-                    self.player.speed = self.player.walk_speed
-                    self.player.animation.animation_speed = self.player.walk_animation_speed
-                # print(self.player.speed)
-            else:
-                self.player.speed = 0
+            started_moving = moved and not self.was_moving
+            if started_moving:
+                self.player.speed = self.player.walk_speed
             if "Left" in self.keys_pressed:
                 self.player.move_left()
                 moved = True
@@ -385,9 +395,17 @@ class Game:
             if self.direction_keys:
                 self.player.facing = self.direction_keys[0].lower()
             if moved:
+                if "x" in self.keys_pressed:
+                    self.player.speed = min(self.player.speed + self.player.acceleration,self.player.run_speed)
+                    self.player.animation.animation_speed = self.player.run_animation_speed
+                else:
+                    self.player.speed = self.player.walk_speed
+                    self.player.animation.animation_speed = self.player.walk_animation_speed
+                # print(self.player.speed)
                 self.player.animation.play(self.player.facing)
             else:
                 self.player.animation.stop()
+            self.was_moving = moved
         self.check_room_transitions()
         self.update_camera()
         self.render_dynamic()

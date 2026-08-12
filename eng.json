@@ -16,8 +16,9 @@
   "obj_kris_bedroom_bed_5":"*(...But, when you woke up!)",
   "obj_kris_bedroom_bed_6":"*(It's not right to stay in bed all day.)",
   "obj_kris_bedroom_bed_7":"*(Even when you really want to sometimes...)",
-  "obj_kris_bedroom_cage_0":"*(The cage never goes anywhere.)",
-  "obj_kris_bedroom_cage_1":"*(So why is there a wagon for it?)",
+  "obj_kris_bedroom_cage_0":"*(The cage is falling apart.)",
+  "obj_kris_bedroom_cage_1":"*(The cage never goes anywhere.)",
+  "obj_kris_bedroom_cage_2":"*(So why is there a wagon for it?)",
   "obj_kris_bedroom_dresser_0":"*(Feels like something is missing from this lamp.)",
   "obj_kris_bedroom_dresser_1":"*(You can't put your finger on it, though.)",
   "obj_kris_bedroom_dresser_2":"*(Or, any other part of your body, for that matter.)",
@@ -88,5 +89,6 @@
   "itm_weapon_ralsei_garland_scarf_3":"I'd rather wrap it around an ACTUAL tree.",
   "scr_dw_susie_ralsei_convo_0":"You haven't seen Noelle, have you?",
   "scr_dw_susie_ralsei_convo_1":"No, I haven't.",
-  "scr_dw_susie_noelle_convo_0":"It's too good to be true, that's why..."
+  "scr_dw_susie_noelle_convo_0":"It's too good to be true, that's why...",
+  "scr_dw_ralsei_argument_0": "SUSIE! This is wrong! You can't have Noelle living in this fantasy!"
 }
