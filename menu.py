@@ -54,7 +54,7 @@ class Menu:
             self.game.canvas.itemconfig(self.cursor, image=self.cursor_photo)
 
         # set font size based on scale
-        font_size = max(18, int(12 * self.scale))
+        font_size = max(12, int(12 * self.scale))
         for text in self.option_text:
             self.game.canvas.itemconfig(text, font=("Determination Mono Web", font_size))
 
