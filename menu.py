@@ -15,18 +15,58 @@ class Menu:
             "STAT",
             "CELL"
         ]
+        
+        # initialize scale basic scale
+        width = self.game.canvas.winfo_width()
+        height = self.game.canvas.winfo_height()
+        
+        if width < 2 or height < 2:
+            width = self.game.root.winfo_screenwidth()
+            height = self.game.root.winfo_screenheight()
+            
+        self.scale = min(width / self.game.viewport_width, height / self.game.viewport_height)
 
         self.selected = 0
-        self.soul_scale = 2
+        self.soul_scale = 0.5 # scale for the soul cursor to adjust its size.
         self.cursor_image = Image.open(cursor_path)
-        self.cursor_scale = self.cursor_image.resize((int(self.cursor_image.width * self.game.scale*self.soul_scale),int(self.cursor_image.height * self.game.scale*self.soul_scale)), Image.Resampling.NEAREST)
-        self.cursor_photo = ImageTk.PhotoImage(self.cursor_scale)
+        self.cursor_photo = None
+        self.refresh_size() # call refresh_size to initialize cursor_photo and option_text fonts 
+    def refresh_size(self):
+        # adjust the scale
+        width = self.game.canvas.winfo_width()
+        height = self.game.canvas.winfo_height()
+        
+        if width < 2 or height < 2:
+            width = self.game.root.winfo_screenwidth()
+            height = self.game.root.winfo_screenheight()    
+            
+        self.scale = min(width / self.game.viewport_width, height / self.game.viewport_height)
+        # print(f"Scale: {self.scale}, Width: {width}, Height: {height}")  # Debugging line to check the scale and dimensions
+
+        # scales, widths and the such.
+        cursor_width = max(1, int(self.cursor_image.width * self.scale * self.soul_scale))
+        cursor_height = max(1, int(self.cursor_image.height * self.scale * self.soul_scale))
+        cursor_scaled = self.cursor_image.resize((cursor_width, cursor_height), Image.Resampling.NEAREST)
+        self.cursor_photo = ImageTk.PhotoImage(cursor_scaled)
+
+        # update the cursor image on the canvas if it exists (technically you might be able to fudge this to change the cursor image, dunno if we'll need it tho.)
+        if self.cursor is not None:
+            self.game.canvas.itemconfig(self.cursor, image=self.cursor_photo)
+
+        # set font size based on scale
+        font_size = max(18, int(12 * self.scale))
+        for text in self.option_text:
+            self.game.canvas.itemconfig(text, font=("Determination Mono Web", font_size))
+
+        # set box size based on scale
+        if self.box is not None:
+            self.game.canvas.itemconfig(self.box, width=max(2, int(3 * self.scale)))
     def create_widgets(self):
         self.box = self.game.canvas.create_rectangle(
             0, 0, 0, 0,
             fill="black",
             outline="white",
-            width=10,
+            width=max(3, int(3 * self.scale)),
         )
         self.canvas_items.append(self.box)
         self.game.canvas.itemconfigure(self.box, state="hidden")
@@ -84,6 +124,7 @@ class Menu:
     def render_static(self):
         if not self.canvas_items:
             self.create_widgets()
+        self.refresh_size()
         self.layout_widgets()
     def render_dynamic(self):
         cursor_y = 98 + self.selected * 18 #Soul cursor, don't touch

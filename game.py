@@ -19,6 +19,7 @@ class Game:
         self.setup_window()
         self.viewport_width = 320
         self.viewport_height = 240
+        self.root.minsize(640, 480) # add minimum size to prvent weird stuff with scaling
         self.scale = 1.0
         self.camera_x = 0
         self.camera_y = 0
@@ -71,14 +72,20 @@ class Game:
         self.root.title("DELTARUNE Chapter 6")
         self.root.geometry("320x240")
         self.root.configure(bg="black")
-        self.fullscreen = False
+        
+        # defaults to full screen, but you can toggle it with a keybind below
+        self.fullscreen = True
+        self.root.attributes("-fullscreen", True)
+        
         self.root.bind("<F11>",self.toggle_fullscreen)
         self.root.bind("<Escape>",self.exit_fullscreen)
         self.root.bind("<Configure>", self.window_resized)
+    # f11 toggles the fullscreen
     def toggle_fullscreen(self, event = None):
         self.fullscreen = not self.fullscreen
         self.root.attributes("-fullscreen", self.fullscreen)
         self.root.after(50,self.on_resize)
+    # escape only leaves fullscreen.
     def exit_fullscreen(self, event = None):
         self.fullscreen = False
         self.root.attributes("-fullscreen", False)
