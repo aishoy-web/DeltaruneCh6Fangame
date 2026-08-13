@@ -344,31 +344,39 @@ class Game:
     def render_background_dynamic(self):
         x, y = self.game_to_screen(0,0)
         self.canvas.coords(self.background_sprite, x, y)
+    #have the dialogue box type out the text character by character, with a sound effect for each character
     def type_text(self):
+        #call the room's dialogue list and get the current dialogue object
         current = self.room.dialogue[self.dialogue_index]
         voice = current.voice
         text = self.dialogue_data.get(current.text_id,current.text_id)
-        current_choices= current.choices
+        current_choices = current.choices
         scene_id = current.scene_id
         sound_effect = current.sound_effect
+        
         if self.character_index == 0 and sound_effect:
             sound_effect.play()
+        #while there is still text left to type, add one character to the dialogue box and play the sound effect
         if self.character_index < len(text):
             self.dialogue_box.set_text(text[:self.character_index+1])
             if voice:
                 voice.play()
+            
+            #advance index and recurse
             self.character_index +=1
             self.typing_job = self.root.after(50, self.type_text)
         else:
             self.typing = False
             self.typing_job = None
-            if current_choices: #If the current dialogue has a choice,
+            if current_choices: #if the current dialogue has a choice, display them
                 self.show_choices(current_choices)
     def advance_dialogue(self, event):
         if self.choice_active:
             return
         current = self.room.dialogue[self.dialogue_index]
         text = current.text_id
+        
+        #if the player presses the advance key while text is still being typed, finish typing it instantly
         if self.typing:
             self.dialogue_box.set_text(text)
             self.character_index = len(text)
@@ -376,15 +384,22 @@ class Game:
             if self.typing_job is not None:
                 self.root.after_cancel(self.typing_job)
                 self.typing_job = None
-            if current.choices: #If the current dialogue has a choice,
+            if current.choices: #If the current dialogue has a choice, display them
                 self.show_choices(current.choices)
             return
+        
+        #if its finished, then advance to the next dialogue
         self.dialogue_index += 1
         if self.dialogue_index < len(self.room.dialogue):
             self.dialogue_box.set_text("")
             self.character_index = 0
-            #self.typing = True
-            #self.type_text()
+            self.typing = True
+            self.type_text()
+        else: # no more dialogue is left, so close the dialogue box
+            self.dialogue_box.hide()
+            self.typing = False
+            self.character_index = 0
+            self.dialogue_index = 0
     def start_dialogue(self):
         self.dialogue_box.show()
         self.dialogue_index = 0
@@ -392,12 +407,30 @@ class Game:
         self.typing = True
         self.type_text()
     def interact(self, event = None):
+        # print("Interaction key pressed") #debug for interaction key
+        #assuming they are not in a dialogue, choice, or menu, check if they are touching an interactable object
+        if self.state != "playing" or self.typing or self.choice_active:
+            return
         interaction_box = self.player.get_interaction_box()
+        
+        #check if any of the interactable objects in the room overlap with the interaction box
+        for obj in self.room.interactable_objects:
+            obj_box = (obj.x, obj.y, obj.x + obj.width, obj.y + obj.height)
+            if self.rectangles_overlap(interaction_box, obj_box):
+                if obj.action == "dialogue": #objects like the bed
+                    self.start_dialogue()
+                elif obj.action == "scene": #doors
+                    self.load_scene(obj.data)
+                elif obj.action == "sound": #noisemakers
+                    self.audio.play_sound(obj.data)
+                break
+        
         # print(interaction_box) #Uncomment only if you want the dimensions of the interaction box to be printed in the terminal window
     def bind_keys(self):
         self.root.bind("<KeyPress>", self.key_press)
         self.root.bind("<KeyRelease>", self.key_release)
         self.root.bind("<space>", self.advance_dialogue)
+        self.root.bind("<space>", self.interact)
         self.root.bind("<z>", self.advance_dialogue)
         self.root.bind("<z>", self.interact)
         self.root.bind("<Configure>", self.on_resize)

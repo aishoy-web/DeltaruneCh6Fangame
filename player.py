@@ -53,10 +53,14 @@ class Player:
         frame = self.animation.get_frame()
         width = frame.width
         height = frame.height
+        
+        #left or right controls
         if self.x < 0:
             self.try_exit("left")
         elif self.x > self.game.game_width - width:
             self.try_exit("right")
+            
+        #up or down controls
         if self.y < 0:
             self.try_exit("up")
         elif self.y > self.game.game_height - height:
