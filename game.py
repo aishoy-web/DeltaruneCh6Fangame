@@ -30,6 +30,9 @@ class Game:
         self.bind_keys()
         self.load_dialogue()
         self.character_index = 0
+        self.typewriter_timer = 0
+        self.dialogue_active = False
+        self.current_dialogue = None
         self.typing = False
         self.typing_job = None
         self.choice_active = False
@@ -65,9 +68,22 @@ class Game:
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
             self.dialogue_data = json.load(f)
         self.type_text()
+    def start_dialogue(self,dialogue):
+        self.dialogue_active = True
+        self.current_dialogue = dialogue
+        self.dialogue_box.start_dialogue(dialogue)
     def load_dialogue(self):
         self.dialogue_index = 0 
         self.dialogue_box = DialogueBox(self)
+    def interact(self, event = None):
+        if self.dialogue_active:
+            self.dialogue_box.advance()
+            return
+        interaction_rect = self.player.get_interaction_box()
+        for obj in self.room.interactable_objects:
+            if interaction_rect.colliderect(obj.hitbox):
+                obj.interact(self)
+                return
     def setup_window(self):
         self.root.title("DELTARUNE Chapter 6")
         self.root.geometry("320x240")
@@ -243,7 +259,7 @@ class Game:
             0
         )
         self.canvas.tag_raise(self.fade_overlay)
-    def rectangles_overlap(a,b):
+    def rectangles_overlap(self, a, b):
         left1, top1, right1, bottom1 = a
         left2, top2, right2, bottom2 = b
         return (
@@ -480,10 +496,30 @@ class Game:
                 self.fade_mode = None
                 self.transitioning = False
         self.render_dynamic()
+    def advance(self):
+        if self.character_index < len(self.current_text):
+            # Finish typing
+            self.character_index = len(self.current_text)
+            return
+        if self.dialogue_index < len(self.dialogue) - 1:
+             # Next line
+             self.dialogue_index += 1
+             self.start_line(self.dialogue[self.dialogue_index])
+             return
+        # Dialogue finished
+        self.close_dialogue()
     def update(self):
+        # if not self.active:
+        #     return
+        # if self.character_index < len(self.current_text):
+        #     self.typewriter_timer += 1
+        #     if self.typewriter_timer >= self.typewriter_speed:
+        #         self.character_index += 1
+        #         self.typewriter_timer = 0
+        #         self.play_character_sound()
         if self.transitioning:
             self.update_transition()
-            self.root.after(32, self.update)
+            self.root.after(16, self.update)
             return
         if self.state == "playing":
             moved = bool(self.keys_pressed & {"Left","Right","Up","Down"})

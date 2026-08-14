@@ -10,20 +10,25 @@ class DialogueBox:
         image = Image.open(box_path)
         self.box_photo = ImageTk.PhotoImage(image)
         self.canvas_items = []
+        self.box_x = 0
+        self.box_y = self.game.viewport_width
+        self.box_width = 320
+        self.box_height = 74
         self.box_sprite = None
         self.text_sprite = None
         self.soul_sprite = None
         soul_path = BASE_DIR/"sprites"/"player"/"player_red_soul"/"spr_heart_0.png"
         image = Image.open(soul_path)
         self.soul_photo=ImageTk.PhotoImage(image)
-        self.game.canvas.coords(self.soul_sprite, 25, 340)
-        current_y = 6
-        self.game.canvas.coords(self.box_sprite, 0, current_y)
+        # self.game.canvas.coords(self.soul_sprite, 25, 340)
+        # current_y = 6
+        # self.game.canvas.coords(self.box_sprite, 0, current_y)
     def create_widgets(self):
-        self.box_sprite = self.game.canvas.create_image(
-            0, 0,
-            image=self.box_photo,
-            anchor="nw",
+        self.box_sprite = self.game.canvas.create_rectangle(
+            0, 0, 0, 0,
+            fill = "black",
+            outline="white",
+            width = 9,
             state="hidden",
             tags=("dialogue",)
         )
@@ -50,14 +55,21 @@ class DialogueBox:
         self.canvas_items.append(self.text_sprite)
         self.canvas_items.append(self.soul_sprite)
     def layout_widgets(self):
-        box_x, box_y = self.game.ui_to_screen(0, 6)
-        self.game.canvas.coords(self.box_sprite, box_x, box_y)
+        x1, y1 = self.game.ui_to_screen(
+            self.box_x,
+            self.box_y
+        )
 
-        text_x, text_y = self.game.ui_to_screen(60, 35)
-        self.game.canvas.coords(self.text_sprite, text_x, text_y)
+        x2, y2 = self.game.ui_to_screen(
+            self.box_x + self.box_width,
+            self.box_y + self.box_height
+        )
 
-        soul_x, soul_y = self.game.ui_to_screen(25, 40)
-        self.game.canvas.coords(self.soul_sprite, soul_x, soul_y)
+        self.game.canvas.coords(
+            self.box_sprite,
+            x1, y1,
+            x2, y2
+        )
     def show(self):
         self.visible = True
         # self.game.canvas.tag_raise("dialogue")
