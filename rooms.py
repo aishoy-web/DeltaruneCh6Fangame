@@ -97,7 +97,7 @@ bedroom = Room(
     dialogue=[
         Dialogue(
             voice=None,
-            text_id="obj_kris_bedroom_bed_1",
+            text_id="obj_kris_bedroom_bed_0",
             choices=None,
             scene_id=None,
             sound_effect=None),

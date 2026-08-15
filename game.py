@@ -227,6 +227,9 @@ class Game:
         if self.menu.visible:
             self.menu.render_dynamic()
             self.canvas.tag_raise("menu")
+        if self.dialogue_box.visible:
+            self.dialogue_box.update_position()
+            self.dialogue_box.layout_widgets()
         self.render_debug_dynamic()
         self.update_debug_hud()
         self.canvas.tag_raise(self.debug_text)
