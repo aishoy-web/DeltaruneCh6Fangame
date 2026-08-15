@@ -9,6 +9,20 @@ import json
 from audiomanager import AudioManager
 from menu import Menu
 BASE_DIR = Path(__file__).resolve().parent
+
+''' 
+    TODO LIST:
+        -multiple voices in a dialogue, and faceplate support for dialogue.
+        -dialogue choices and branching paths.
+        
+        Bug Fixin'
+        -dialogue text does not scale with the window size, and the dialogue box thickness does not scale with the window size.
+        -closing dialogue after it finishes also seems to be bugged, but it might be more related to progressing dialogue
+            rather than closing it.
+        -some movement animations can still play when dialogue is active.
+'''
+
+
 class Game:
     def __init__(self):
         self.root = tk.Tk()
@@ -479,6 +493,8 @@ class Game:
             self.direction_keys.remove(event.keysym)
     def toggle_menu(self, event = None):
         if self.state == "playing":
+            if self.dialogue_box.visible: #prevent menu open on dialgoue
+                return
             self.menu.open()
             self.state = "menu" 
             self.player.animation.finish_at_rest_frame()
@@ -536,6 +552,7 @@ class Game:
                 trigger.y + trigger.height)
             if self.rectangles_overlap(player_box, trigger_box):
 
+                # possibly for special dialogue where the player is still moving, ala the chapter 2 chat scene with noelle about december?
                 self.start_dialogue(
                     trigger.dialogue,
                     lock_player=False)

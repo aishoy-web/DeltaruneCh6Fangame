@@ -1,5 +1,7 @@
 import tkinter as tk
 from PIL import Image, ImageTk
+
+from menu import cursor_path
 class DialogueBox:
     def __init__(self, game):
         self.game = game
@@ -16,7 +18,7 @@ class DialogueBox:
         self.box_x = 10
         self.box_y = 6
         self.box_width = 300
-        self.box_height = 80
+        self.box_height = 74
         # Text settings
         # self.text_x = 160
         # self.text_y = 46
@@ -28,7 +30,7 @@ class DialogueBox:
         self.soul_sprite = None
         # Soul cursor
         soul_path = (
-            "sprites/player/player_red_soul/spr_heart_0.png")
+            cursor_path)
 
         image = Image.open(soul_path)
         self.soul_photo = ImageTk.PhotoImage(image)
@@ -193,7 +195,7 @@ class DialogueBox:
         if viewport_y >= self.game.viewport_height / 2:
             self.box_y = 6
         else:
-            self.box_y = 154
+            self.box_y = 162
     # def set_portrait(self):
     #     self.portrait = image
     def clear_portrait(self):
