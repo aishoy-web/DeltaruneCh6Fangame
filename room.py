@@ -1,5 +1,5 @@
 #The purpose of this file is to establish room, exit, and interactable logic.
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dialogue import Dialogue
 @dataclass
 class Exit:
@@ -24,6 +24,16 @@ class Interactable:
     data: object | None = None
     facing: str | None = None
 @dataclass
+class DialogueTrigger:
+    id: str
+    x: int
+    y: int
+    width: int
+    height: int
+    dialogue: list
+    flag: str | None = None
+    once: bool = True
+@dataclass
 class Room:
     name: str
     background: str
@@ -31,6 +41,7 @@ class Room:
     dialogue: list
     collisions: list
     exits: list[Exit]
+    triggers: list[DialogueTrigger] = field(default_factory=list)
     def __init__(
         self,
         name,

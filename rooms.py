@@ -1,7 +1,8 @@
 #Different from room.py, this file stores the details of what rooms are used in the game.
 #It imports the Room class from room.py and creates instances of it for each room in the game. 
 #It also establishes the exits for each room, allowing the player to move between them.
-from room import Room, Exit, Interactable
+from dataclasses import dataclass
+from room import Room, Exit, Interactable, DialogueTrigger
 from dialogue import Dialogue
 from pathlib import Path
 BASE_DIR = Path(__file__).parent
@@ -51,7 +52,6 @@ BASE_DIR = Path(__file__).parent
     see this bedroom below for reference.
         
 '''
-
 
 bedroom = Room(
     name="myroom",

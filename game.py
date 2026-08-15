@@ -32,7 +32,11 @@ class Game:
         self.character_index = 0
         self.typewriter_timer = 0
         self.dialogue_active = False
+        self.dialogue_active = False
+        self.dialogue_blocks_movement = False
         self.current_dialogue = None
+        self.triggered_events = set()
+        self.story_flags = set()
         self.typing = False
         self.typing_job = None
         self.choice_active = False
@@ -68,10 +72,14 @@ class Game:
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
             self.dialogue_data = json.load(f)
         self.type_text()
-    def start_dialogue(self,dialogue):
+    def start_dialogue(self, dialogue=None, lock_player=True):
         self.dialogue_active = True
-        self.current_dialogue = dialogue
-        self.dialogue_box.start_dialogue(dialogue)
+        self.dialogue_blocks_movement = lock_player
+        self.dialogue_index = 0
+        self.character_index = 0
+        self.typing = True
+        self.dialogue_box.show()
+        self.type_text()
     def load_dialogue(self):
         self.dialogue_index = 0 
         self.dialogue_box = DialogueBox(self)
@@ -511,15 +519,31 @@ class Game:
              return
         # Dialogue finished
         self.close_dialogue()
+    def check_dialogue_triggers(self):
+        player_box = self.player.get_hitbox()
+        for trigger in self.room.triggers:
+            if trigger.once and trigger.id in self.triggered_events:
+                continue
+
+            if trigger.flag is not None:
+                if trigger.flag not in self.story_flags:
+                    continue
+
+            trigger_box = (
+                trigger.x,
+                trigger.y,
+                trigger.x + trigger.width,
+                trigger.y + trigger.height)
+            if self.rectangles_overlap(player_box, trigger_box):
+
+                self.start_dialogue(
+                    trigger.dialogue,
+                    lock_player=False)
+
+                if trigger.once:
+                    self.triggered_events.add(trigger.id)
+                return
     def update(self):
-        # if not self.active:
-        #     return
-        # if self.character_index < len(self.current_text):
-        #     self.typewriter_timer += 1
-        #     if self.typewriter_timer >= self.typewriter_speed:
-        #         self.character_index += 1
-        #         self.typewriter_timer = 0
-        #         self.play_character_sound()
         if self.transitioning:
             self.update_transition()
             self.root.after(16, self.update)
@@ -527,22 +551,24 @@ class Game:
         if self.state == "playing":
             moved = bool(self.keys_pressed & {"Left","Right","Up","Down"})
             started_moving = moved and not self.was_moving
-            if started_moving:
-                self.player.speed = self.player.walk_speed
-            if "Left" in self.keys_pressed:
-                self.player.move_left()
-                moved = True
-            if "Right" in self.keys_pressed:
-                self.player.move_right()
-                moved = True
-            if "Up" in self.keys_pressed:
-                self.player.move_up()
-                moved = True
-            if "Down" in self.keys_pressed:
-                self.player.move_down()
-                moved = True
-            if self.direction_keys:
-                self.player.facing = self.direction_keys[0].lower()
+            if not self.dialogue_blocks_movement:
+                if started_moving:
+                    self.player.speed = self.player.walk_speed
+                if "Left" in self.keys_pressed:
+                    self.player.move_left()
+                    moved = True
+                if "Right" in self.keys_pressed:
+                    self.player.move_right()
+                    moved = True
+                if "Up" in self.keys_pressed:
+                    self.player.move_up()
+                    moved = True
+                if "Down" in self.keys_pressed:
+                    self.player.move_down()
+                    moved = True
+                if self.direction_keys:
+                    self.player.facing = self.direction_keys[0].lower()
+                    moved = True
             if moved:
                 if "x" in self.keys_pressed:
                     self.player.speed = min(self.player.speed + self.player.acceleration,self.player.run_speed)
@@ -559,6 +585,7 @@ class Game:
         self.update_camera()
         self.render_dynamic()
         self.player.animation.update()
+        self.check_dialogue_triggers()
         self.root.after(32, self.update) # Framerate, lower number = higher framerate
     def run(self):
         self.root.mainloop()
