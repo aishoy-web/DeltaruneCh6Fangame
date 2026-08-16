@@ -3,6 +3,8 @@ import time
 from pathlib import Path
 from rooms import ROOMS
 from PIL import Image, ImageTk
+from ui_sprites import UISpriteSheet
+from hud import HUD
 from player import Player
 from dialogue_box import DialogueBox
 import json
@@ -43,6 +45,8 @@ class Game:
         self.create_widgets()
         self.bind_keys()
         self.load_dialogue()
+        self.ui_sprites = UISpriteSheet(self)
+        self.hud = HUD(self)
         self.character_index = 0
         self.typewriter_timer = 0
         self.dialogue_active = False
@@ -80,6 +84,7 @@ class Game:
         # Draw everything once
         self.render_static()
         self.update_debug_hud()
+        self.transitioning = False
         self.state = "playing"
         self.update()
         self.typing = True
@@ -221,6 +226,10 @@ class Game:
     def change_room(self, exit):
         if self.transitioning:
             return
+        if self.state == "menu":
+            self.menu.close()
+            self.hud.close()
+            self.state = "playing"
         self.transitioning = True
         self.fade_mode = "out"
         self.fade_alpha = 0
@@ -239,6 +248,7 @@ class Game:
             self.render_fade()
     def render_static(self):
         self.render_background()
+        self.hud.render_static()
         self.menu.render_static()
         self.render_debug_static()
         self.dialogue_box.render_static()
@@ -250,7 +260,6 @@ class Game:
             self.menu.render_dynamic()
             self.canvas.tag_raise("menu")
         if self.dialogue_box.visible:
-            self.dialogue_box.update_position()
             self.dialogue_box.layout_widgets()
         self.render_debug_dynamic()
         self.update_debug_hud()
@@ -477,29 +486,33 @@ class Game:
         self.root.bind("<Configure>", self.on_resize)
         self.root.bind("<c>", self.toggle_menu)
     def key_press(self, event):
+        if self.transitioning:
+            return
         self.keys_pressed.add(event.keysym)
-        if event.keysym in ("Left","Right","Up","Down"):
+        if event.keysym in ("Left", "Right", "Up", "Down"):
             if event.keysym in self.direction_keys:
                 self.direction_keys.remove(event.keysym)
             self.direction_keys.append(event.keysym)
-        if self.state == 'menu':
-            if event.keysym == 'Up':
+        if self.state == "menu":
+            if event.keysym == "Up":
                 self.menu.move_up()
-            elif event.keysym == 'Down':
+            elif event.keysym == "Down":
                 self.menu.move_down()
     def key_release(self, event):
         self.keys_pressed.discard(event.keysym)
         if event.keysym in self.direction_keys:
             self.direction_keys.remove(event.keysym)
-    def toggle_menu(self, event = None):
+    def toggle_menu(self, event=None):
+        if self.transitioning:
+            return
         if self.state == "playing":
-            if self.dialogue_box.visible: #prevent menu open on dialgoue
-                return
             self.menu.open()
-            self.state = "menu" 
+            self.hud.open()
+            self.state = "menu"
             self.player.animation.finish_at_rest_frame()
         elif self.state == "menu":
             self.menu.close()
+            self.hud.close()
             self.state = "playing"
     def update_transition(self):
         elapsed = (time.perf_counter() - self.fade_start_time) * 1000
@@ -600,6 +613,9 @@ class Game:
             self.was_moving = moved
         self.check_room_transitions()
         self.update_camera()
+        self.hud.update_position()
+        if self.dialogue_box.visible:
+            self.dialogue_box.update_position()
         self.render_dynamic()
         self.player.animation.update()
         self.check_dialogue_triggers()

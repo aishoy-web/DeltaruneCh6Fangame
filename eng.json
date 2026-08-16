@@ -8,7 +8,7 @@
   "obj_bathroom_toilet_1":"*(You flushed the toilet!)",
   "obj_bathroom_toilet_2":"*(You toilen't.)",
   "obj_bathroom_window":"*(A convenient exit.)",
-  "obj_kris_bedroom_bed_0":"*(It's your bed.)",
+  "obj_kris_bedroom_bed_0":"* (It's your bed.)",
   "obj_kris_bedroom_bed_1":"*(If you go back to bed, you could miss a lot of important things.)",
   "obj_kris_bedroom_bed_2":"*(Go to bed anyway?)",
   "obj_kris_bedroom_bed_3":"*(For some reason, you decided to go back to bed...)",

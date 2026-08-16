@@ -15,7 +15,13 @@ class Menu:
             "STAT",
             "CELL"
         ]
-        
+        self.level = 1
+        self.max_hp = 20
+        self.hp = 20
+        self.money = 2
+        self.dark_dollars = 0
+        # self.status_box = sheet.crop((292, 119, 363, 174))
+        # self.menu_box = sheet.crop((292, 177, 363, 251))
         # initialize scale basic scale
         width = self.game.canvas.winfo_width()
         height = self.game.canvas.winfo_height()
@@ -25,7 +31,7 @@ class Menu:
             height = self.game.root.winfo_screenheight()
             
         self.scale = min(width / self.game.viewport_width, height / self.game.viewport_height)
-
+        self.last_scale = None
         self.selected = 0
         self.soul_scale = 0.5 # scale for the soul cursor to adjust its size.
         self.cursor_image = Image.open(cursor_path)
@@ -41,6 +47,9 @@ class Menu:
             height = self.game.root.winfo_screenheight()    
             
         self.scale = min(width / self.game.viewport_width, height / self.game.viewport_height)
+        if self.scale == self.last_scale:
+            return
+        self.last_scale = self.scale
         # print(f"Scale: {self.scale}, Width: {width}, Height: {height}")  # Debugging line to check the scale and dimensions
 
         # scales, widths and the such.
@@ -99,7 +108,6 @@ class Menu:
         for i, text in enumerate(self.option_text):
                     x, y = self.game.ui_to_screen(41, 94 + i * 18) #Text coords, done
                     self.game.canvas.coords(text, x, y)
-        self.render_dynamic()
     def open(self):
         self.visible = True
         self.render_dynamic()

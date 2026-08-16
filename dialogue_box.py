@@ -6,22 +6,21 @@ class DialogueBox:
     def __init__(self, game):
         self.game = game
         # Dialogue state
+        # self.dialogue_box = sheet.crop((292, 19, 581, 95))
         self.visible = False
         self.cursor_visible = False
         self.portrait = None
         self.portrait_sprite = None
         self.portrait_photo = None
         self.portrait_width = 65
-        self.text_padding = 12
+        self.text_padding = 9
         self.portrait_gap = 8
         # Box dimensions
-        self.box_x = 10
-        self.box_y = 6
-        self.box_width = 300
-        self.box_height = 74
+        self.box_x = 17.5
+        self.box_y = 0 # This is just the initial position of the box, doesn't actually determine where it shows up. Go to the logic gate in def update_position for that.
+        self.box_width = 285.5
+        self.box_height = 73
         # Text settings
-        # self.text_x = 160
-        # self.text_y = 46
         self.text_width = 270
         # Canvas items
         self.canvas_items = []
@@ -40,10 +39,11 @@ class DialogueBox:
             0, 0, 0, 0,
             fill="black",
             outline="white",
-            width=9,
+            width=11,
             state="hidden",
             tags=("dialogue",)
         )
+        self.game.canvas.tag_raise(self.box_sprite)
         # Dialogue text
         self.text_sprite = self.game.canvas.create_text(
             0,
@@ -187,15 +187,14 @@ class DialogueBox:
     def update_position(self):
         player_center_y = (
             self.game.player.y +
-            self.game.player.animation.sprite_height / 2
-        )
+            self.game.player.animation.sprite_height / 2)
 
         viewport_y = player_center_y - self.game.camera_y
 
-        if viewport_y >= self.game.viewport_height / 2:
+        if viewport_y >= self.game.viewport_height * 0.6:
             self.box_y = 6
         else:
-            self.box_y = 162
+            self.box_y = 161.5
     # def set_portrait(self):
     #     self.portrait = image
     def clear_portrait(self):
@@ -203,6 +202,4 @@ class DialogueBox:
     def render_static(self):
         if not self.canvas_items:
             self.create_widgets()
-        if self.visible:
-            self.update_position()
         self.layout_widgets()

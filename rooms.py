@@ -80,9 +80,9 @@ bedroom = Room(
             #your bed
             Interactable(
             x=240,
-            y=108,
+            y=100,
             width=48,
-            height=28,
+            height=48,
             action="dialogue",
             data="obj_kris_bedroom_bed_0",),
                   
