@@ -6,7 +6,6 @@ class DialogueBox:
     def __init__(self, game):
         self.game = game
         # Dialogue state
-        # self.dialogue_box = sheet.crop((292, 19, 581, 95))
         self.visible = False
         self.cursor_visible = False
         self.portrait = None
