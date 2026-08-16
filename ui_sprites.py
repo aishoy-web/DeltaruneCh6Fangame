@@ -52,18 +52,18 @@ class UISpriteSheet:
         # --------------------------------
         # Apply UI calibration
         # --------------------------------
-
+        print("before", image.size)
         if name in self.calibrated_sizes:
             calibrated_width, calibrated_height = self.calibrated_sizes[name]
 
             image = image.resize(
                 (
-                    max(1, round(calibrated_width)),
-                    max(1, round(calibrated_height))
+                    max(1, round(calibrated_width* scale)),
+                    max(1, round(calibrated_height* scale))
                 ),
                 Image.Resampling.NEAREST
             )
-
+        print("after calibrated", image.size)
         # --------------------------------
         # Apply fullscreen/game scaling
         # --------------------------------
