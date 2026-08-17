@@ -152,6 +152,7 @@ class Game:
         self.scale = min(
             width / self.viewport_width,
             height / self.viewport_height)
+        
         draw_width = int(self.viewport_width * self.scale)
         draw_height = int(self.viewport_height * self.scale)
         self.offset_x = (width - draw_width) // 2

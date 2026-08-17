@@ -26,6 +26,8 @@ class UISpriteSheet:
         # coordinate system, BEFORE game.scale is applied.
         #
         # The menu dimensions were calibrated against DELTARUNE.
+        self.scale = self.game.scale
+        
         self.calibrated_sizes = {
             "menu_box": (68.5, 71.5),
         }
@@ -36,11 +38,11 @@ class UISpriteSheet:
     def get(self, name):
         """Return a PhotoImage scaled to the game's current scale."""
 
-        scale = self.game.scale
+        self.scale = self.game.scale
 
         # Round the scale so tiny floating-point changes don't
         # constantly create new cached images.
-        scale_key = round(scale, 3)
+        scale_key = round(self.scale, 3)
 
         cache_key = (name, scale_key)
 
@@ -58,8 +60,8 @@ class UISpriteSheet:
 
             image = image.resize(
                 (
-                    max(1, round(calibrated_width* scale)),
-                    max(1, round(calibrated_height* scale))
+                    max(1, round(calibrated_width)),
+                    max(1, round(calibrated_height))
                 ),
                 Image.Resampling.NEAREST
             )
@@ -68,9 +70,9 @@ class UISpriteSheet:
         # Apply fullscreen/game scaling
         # --------------------------------
 
-        if scale != 1:
-            width = round(image.width * scale)
-            height = round(image.height * scale)
+        if self.scale != 1:
+            width = round(image.width * self.scale)
+            height = round(image.height * self.scale)
 
             image = image.resize(
                 (width, height),
