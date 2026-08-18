@@ -113,8 +113,8 @@ bedroom = Room(
                 width=40,
                 height=20,
                 destination="myhallway",
-                spawn_x=290,
-                spawn_y=105,
+                spawn_x=288,
+                spawn_y=112,
                 facing_direction="down")])
 
 hallway = Room(

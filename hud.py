@@ -1,10 +1,9 @@
-#responsible for displaying Kris's status box.
 class HUD:
     def __init__(self, game):
         self.game = game
 
         # Status box dimensions in native UI pixels
-        self.status_x = 17.5
+        self.status_x = 16
         self.status_y = 161.5
 
         self.status_width = 71
@@ -27,6 +26,11 @@ class HUD:
         self.create_widgets()
 
     def create_widgets(self):
+
+        # --------------------------------
+        # Status box
+        # --------------------------------
+
         self.status_sprite = self.game.canvas.create_image(
             0,
             0,
@@ -35,6 +39,10 @@ class HUD:
             state="hidden",
             tags=("hud",)
         )
+
+        # --------------------------------
+        # Status text
+        # --------------------------------
 
         self.status_text = self.game.canvas.create_text(
             0,
@@ -57,7 +65,7 @@ class HUD:
     def update_text(self):
         text = (
             f"Kris\n"
-            f"Lv {self.level}\n"
+            f"LV {self.level}\n"
             f"HP {self.hp}/{self.max_hp}\n"
             f"$ {self.money}"
         )
@@ -73,15 +81,25 @@ class HUD:
             self.game.player.animation.sprite_height / 2
         )
 
-        viewport_y = player_center_y - self.game.camera_y
+        viewport_y = (
+            player_center_y -
+            self.game.camera_y
+        )
 
         # Move to the bottom when Kris is in the bottom 40%
         if viewport_y <= self.game.viewport_height * 0.6:
-            self.status_y = 6
+            # self.status_y = 26
+            new_y = 26
         else:
-            self.status_y = 179
+            # self.status_y = 161
+            new_y = 161
+        if new_y != self.status_y:
+            self.status_y = new_y
+            self.layout_widgets()
+
 
     def layout_widgets(self):
+
         # --------------------------------
         # Status box
         # --------------------------------
@@ -116,9 +134,28 @@ class HUD:
         )
 
     def render_static(self):
+
+        # --------------------------------
+        # Refresh the scaled status sprite
+        # --------------------------------
+
+        status_photo = self.game.ui_sprites.get(
+            "status_box"
+        )
+
+        self.game.canvas.itemconfigure(
+            self.status_sprite,
+            image=status_photo
+        )
+
+        # --------------------------------
+        # Position HUD
+        # --------------------------------
+
         self.layout_widgets()
 
         self.game.canvas.tag_raise("hud")
+
     def open(self):
         self.game.canvas.itemconfigure(
             self.status_sprite,
@@ -131,7 +168,6 @@ class HUD:
         )
 
         self.game.canvas.tag_raise("hud")
-
 
     def close(self):
         self.game.canvas.itemconfigure(

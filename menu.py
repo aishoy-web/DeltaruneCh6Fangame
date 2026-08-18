@@ -2,6 +2,7 @@ from pathlib import Path
 from PIL import Image, ImageTk
 
 BASE_DIR = Path(__file__).resolve().parent
+
 cursor_path = (
     BASE_DIR
     / "sprites"
@@ -18,6 +19,7 @@ class Menu:
         # Canvas items
         self.canvas_items = []
         self.option_text = []
+
         self.menu_sprite = None
         self.cursor = None
 
@@ -34,12 +36,9 @@ class Menu:
         # --------------------------------
         # Menu position
         # --------------------------------
-        #
-        # These coordinates were calibrated against
-        # DELTARUNE's menu.
-        #
-        self.menu_x = 17
-        self.menu_y = 85.5
+
+        self.menu_x = 16
+        self.menu_y = 84
 
         # --------------------------------
         # Soul cursor
@@ -47,38 +46,67 @@ class Menu:
 
         self.soul_scale = 0.5
 
-        self.cursor_image = Image.open(cursor_path)
+        self.cursor_image = Image.open(
+            cursor_path
+        ).convert("RGBA")
+
         self.cursor_photo = None
 
         self.refresh_cursor()
 
-    def refresh_cursor(self):
-        """Scale the soul cursor according to the game's current scale."""
+    # ======================================================
+    # CURSOR
+    # ======================================================
 
-        scale = self.game.scale
+    def refresh_cursor(self):
+        """
+        Scale the soul cursor according to the current
+        game scale.
+        """
+
+        scale = float(self.game.scale)
 
         cursor_width = max(
             1,
-            int(self.cursor_image.width * scale * self.soul_scale)
+            round(
+                self.cursor_image.width
+                * scale
+                * self.soul_scale
+            )
         )
 
         cursor_height = max(
             1,
-            int(self.cursor_image.height * scale * self.soul_scale)
+            round(
+                self.cursor_image.height
+                * scale
+                * self.soul_scale
+            )
         )
 
         cursor_scaled = self.cursor_image.resize(
-            (cursor_width, cursor_height),
+            (
+                cursor_width,
+                cursor_height
+            ),
             Image.Resampling.NEAREST
         )
 
-        self.cursor_photo = ImageTk.PhotoImage(cursor_scaled)
+        self.cursor_photo = ImageTk.PhotoImage(
+            cursor_scaled
+        )
 
+        # If the Canvas item already exists,
+        # immediately replace its image.
         if self.cursor is not None:
             self.game.canvas.itemconfigure(
                 self.cursor,
                 image=self.cursor_photo
             )
+
+    # ======================================================
+    # WIDGET CREATION
+    # ======================================================
 
     def create_widgets(self):
 
@@ -118,7 +146,10 @@ class Menu:
                 0,
                 text=option,
                 anchor="nw",
-                font=("Determination Mono Web", 45),
+                font=(
+                    "Determination Mono Web",
+                    45
+                ),
                 fill="white",
                 state="hidden",
                 tags=("menu",)
@@ -131,6 +162,10 @@ class Menu:
             self.cursor,
             *self.option_text
         ])
+
+    # ======================================================
+    # LAYOUT
+    # ======================================================
 
     def layout_widgets(self):
 
@@ -154,6 +189,7 @@ class Menu:
         # --------------------------------
 
         for i, text in enumerate(self.option_text):
+
             x, y = self.game.ui_to_screen(
                 41,
                 94 + i * 18
@@ -164,6 +200,10 @@ class Menu:
                 x,
                 y
             )
+
+    # ======================================================
+    # OPEN / CLOSE
+    # ======================================================
 
     def open(self):
         self.visible = True
@@ -188,6 +228,10 @@ class Menu:
                 state="hidden"
             )
 
+    # ======================================================
+    # SELECTION
+    # ======================================================
+
     def move_up(self):
         if self.selected > 0:
             self.selected -= 1
@@ -198,18 +242,55 @@ class Menu:
             self.selected += 1
             self.render_dynamic()
 
+    # ======================================================
+    # RENDERING
+    # ======================================================
+
     def render_static(self):
+
         if not self.canvas_items:
             self.create_widgets()
 
-        # The menu box is scaled by UISpriteSheet.
-        # The cursor is scaled separately because it is
-        # currently a player sprite rather than a UI sprite.
+        # --------------------------------
+        # Refresh menu sprite
+        # --------------------------------
+        #
+        # This is the important part.
+        #
+        # UISpriteSheet.get() uses the CURRENT
+        # game.scale, so the menu box is replaced
+        # whenever the game is fullscreen-scaled.
+        # --------------------------------
+
+        menu_photo = self.game.ui_sprites.get(
+            "menu_box"
+        )
+
+        self.game.canvas.itemconfigure(
+            self.menu_sprite,
+            image=menu_photo
+        )
+
+        # --------------------------------
+        # Refresh cursor
+        # --------------------------------
+
         self.refresh_cursor()
+
+        # --------------------------------
+        # Refresh text
+        # --------------------------------
+
+        # self.refresh_text_scale()
+
+        # --------------------------------
+        # Position everything
+        # --------------------------------
 
         self.layout_widgets()
 
     def render_dynamic(self):
+
         if self.cursor is None:
             return
 
