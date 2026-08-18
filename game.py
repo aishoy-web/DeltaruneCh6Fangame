@@ -1,4 +1,5 @@
 import tkinter as tk
+import customtkinter
 import time
 from pathlib import Path
 from rooms import ROOMS
@@ -27,6 +28,8 @@ BASE_DIR = Path(__file__).resolve().parent
 
 class Game:
     def __init__(self):
+        # INITALIZATION
+        # relating to screen size
         self.root = tk.Tk()
         icon_path = BASE_DIR / "sprites" / "assets" / "taskbar_logo.png"
         icon = ImageTk.PhotoImage(Image.open(icon_path))
@@ -42,8 +45,20 @@ class Game:
         self.camera_zoom = 1.0
         self.offset_x = 0
         self.offset_y = 0
+        
+        #custom font initalization
+        listOfPreferredFonts = ["Determination Mono Web"]
+        listOfInstalledFonts = list(tk.font.families())
+        
+        self.BaseFont = customtkinter.CTkFont(family=listOfPreferredFonts[0], size=20)
+        
+        for font in listOfPreferredFonts:
+            if font in listOfInstalledFonts:
+                
+                break
+        
+        # screen display
         self.create_widgets()
-        self.bind_keys()
         self.load_dialogue()
         self.ui_sprites = UISpriteSheet(self)
         self.hud = HUD(self)
@@ -58,10 +73,21 @@ class Game:
         self.typing = False
         self.typing_job = None
         self.choice_active = False
+        
+        # controls 
+        self.bind_keys()
         self.collision_debug = []
         self.player_hitbox_debug = None
         self.interaction_debug = None
         self.exit_debug = []
+        self.pending_room = None
+        self.pending_spawn = None
+        self.pending_facing = None
+        self.was_moving = False
+        self.keys_pressed = set()
+        self.direction_keys = []
+        
+        #other init
         self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
         self.widescreen_mode = False
         self.transitioning = False
@@ -69,19 +95,14 @@ class Game:
         self.fade_duration = 250 #milliseconds for half the fade transition
         self.fade_start_time = None
         self.fade_mode = None
-        self.pending_room = None
-        self.pending_spawn = None
-        self.pending_facing = None
-        self.was_moving = False
-        self.keys_pressed = set()
-        self.direction_keys = []
-        # Load assets
         self.audio = AudioManager()
+        
+        # Create basic game objects
         self.load_room("myroom")
-        # Create game objects
         self.player = Player(self)
         self.menu = Menu(self)
-        # Draw everything once
+        
+        # Draw everything once finished initializing, so that the game starts with a fully rendered screen
         self.render_static()
         self.update_debug_hud()
         self.transitioning = False
