@@ -506,10 +506,12 @@ class Game:
         self.root.bind("<z>", self.advance_dialogue)
         self.root.bind("<z>", self.interact)
         self.root.bind("<Configure>", self.on_resize)
-        self.root.bind("<c>", self.toggle_menu)
+        # self.root.bind("<c>", self.toggle_menu)
     def key_press(self, event):
         if self.transitioning:
             return
+        if event.keysym == "c" and "c" not in self.keys_pressed:
+            self.toggle_menu()
         self.keys_pressed.add(event.keysym)
         if event.keysym in ("Left", "Right", "Up", "Down"):
             if event.keysym in self.direction_keys:
@@ -628,7 +630,6 @@ class Game:
                 else:
                     self.player.speed = self.player.walk_speed
                     self.player.animation.animation_speed = self.player.walk_animation_speed
-                # print(self.player.speed)
                 self.player.animation.play(self.player.facing)
             else:
                 self.player.animation.stop()
