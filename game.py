@@ -506,7 +506,6 @@ class Game:
         self.root.bind("<z>", self.advance_dialogue)
         self.root.bind("<z>", self.interact)
         self.root.bind("<Configure>", self.on_resize)
-        # self.root.bind("<c>", self.toggle_menu)
     def key_press(self, event):
         if self.transitioning:
             return
@@ -533,7 +532,7 @@ class Game:
             self.menu.open()
             self.hud.open()
             self.state = "menu"
-            self.player.animation.finish_at_rest_frame()
+            self.player.animation.stop_at_next_rest_frame()
         elif self.state == "menu":
             self.menu.close()
             self.hud.close()
@@ -603,36 +602,71 @@ class Game:
             self.root.after(16, self.update)
             return
         if self.state == "playing":
-            moved = bool(self.keys_pressed & {"Left","Right","Up","Down"})
-            started_moving = moved and not self.was_moving
+            movement_keys_held = bool(
+                self.keys_pressed & {"Left", "Right", "Up", "Down"}
+            )
+
+            started_moving = movement_keys_held and not self.was_moving
+
             if not self.dialogue_blocks_movement:
                 if started_moving:
                     self.player.speed = self.player.walk_speed
+
+                moved = False
+
                 if "Left" in self.keys_pressed:
-                    self.player.move_left()
-                    moved = True
+                    if self.player.move_left():
+                        moved = True
+
                 if "Right" in self.keys_pressed:
-                    self.player.move_right()
-                    moved = True
+                    if self.player.move_right():
+                        moved = True
+
                 if "Up" in self.keys_pressed:
-                    self.player.move_up()
-                    moved = True
+                    if self.player.move_up():
+                        moved = True
+
                 if "Down" in self.keys_pressed:
-                    self.player.move_down()
-                    moved = True
+                    if self.player.move_down():
+                        moved = True
+
                 if self.direction_keys:
                     self.player.facing = self.direction_keys[0].lower()
-                    moved = True
+
+            else:
+                moved = False
+
+            # --------------------------------
+            # Animation
+            # --------------------------------
+
             if moved:
                 if "x" in self.keys_pressed:
-                    self.player.speed = min(self.player.speed + self.player.acceleration,self.player.run_speed)
-                    self.player.animation.animation_speed = self.player.run_animation_speed
+                    self.player.speed = min(
+                        self.player.speed + self.player.acceleration,
+                        self.player.run_speed
+                    )
+                    self.player.animation.animation_speed = (
+                        self.player.run_animation_speed
+                    )
                 else:
                     self.player.speed = self.player.walk_speed
-                    self.player.animation.animation_speed = self.player.walk_animation_speed
+                    self.player.animation.animation_speed = (
+                        self.player.walk_animation_speed
+                    )
+
                 self.player.animation.play(self.player.facing)
+
             else:
-                self.player.animation.stop()
+                if self.was_moving:
+                    if movement_keys_held:
+                        # Kris is holding a direction but cannot move.
+                        # Finish the current walking cycle.
+                        self.player.animation.finish_current_cycle()
+                    else:
+                        # Kris stopped because the movement key was released.
+                        # Naturally advance to the appropriate rest frame.
+                        self.player.animation.stop_at_next_rest_frame()
             self.was_moving = moved
         self.check_room_transitions()
         self.update_camera()

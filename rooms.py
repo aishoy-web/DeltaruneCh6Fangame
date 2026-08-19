@@ -75,7 +75,7 @@ bedroom = Room(
         # dresser_asriel
         (90,100,135,117.5)
           ],
-    music="flowery.ogg",
+    music="mus_birdnoise.ogg",
     interactable_objects = [
             #your bed
             Interactable(

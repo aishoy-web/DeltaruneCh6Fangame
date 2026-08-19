@@ -47,28 +47,54 @@ class AnimatedSprite:
         self.timer = 0
         self.rest_frames = (0,2)
         self.stop_at_rest_frame = False
+        self.finish_when_cycle_ends = False
+        self.finish_rest_frame = 0
+        self.stop_target_rest_frame = 0
+        self.playing = False
     def play(self, animation_name):
         if animation_name not in self.animations:
             raise ValueError(f"Unknown animation: {animation_name}")
-        if not self.playing:
-            self.current_frame = 1
-            self.timer = 0
-        self.playing = True
+
+        # Starting movement again cancels any pending stop.
+        self.stop_at_rest_frame = False
+        self.finish_when_cycle_ends = False
+
         if animation_name != self.current_animation:
             self.current_animation = animation_name
             self.current_frame = 0
             self.timer = 0
+
+        if not self.playing:
+            self.current_frame = 1
+            self.timer = 0
+
+        self.playing = True
     def update(self):
         if not self.playing:
             return
         self.timer += 1
         if self.timer >= self.animation_speed:
             self.timer = 0
-            frame_count = len(self.animations[self.current_animation])
+
+            frame_count = len(
+                self.animations[self.current_animation]
+            )
+
             self.current_frame += 1
+
             if self.current_frame >= frame_count:
                 self.current_frame = 0
-            if (self.stop_at_rest_frame and self.current_frame in self.rest_frames):
+
+                if self.finish_when_cycle_ends:
+                    self.playing = False
+                    self.finish_when_cycle_ends = False
+                    self.current_frame = self.finish_rest_frame
+                    return
+
+            if (
+                self.stop_at_rest_frame
+                and self.current_frame == self.stop_target_rest_frame
+            ):
                 self.playing = False
                 self.stop_at_rest_frame = False
         # print(self.current_animation, self.current_frame) #Uncomment to see which frames of animation are playing.
@@ -86,6 +112,9 @@ class AnimatedSprite:
         self.current_frame = 0
         self.timer = 0
         self.stop_at_rest_frame = False
+        self.finish_when_cycle_ends = False
+        self.finish_rest_frame = 0
+        self.stop_target_rest_frame = 0
     def start(self):
         self.playing = True
     def is_finished(self):
@@ -93,5 +122,36 @@ class AnimatedSprite:
             self.current_frame == len(self.animations[self.current_animation]) - 1
             and self.timer == 0
         )
-    def finish_current_cyle(self):
+    def finish_current_cycle(self):
+        if not self.playing:
+            return
+        if self.current_frame in (0, 1):
+            self.finish_rest_frame = 0
+        else:
+            self.finish_rest_frame = 2
         self.finish_when_cycle_ends = True
+    def stop_at_next_rest_frame(self):
+        if not self.playing:
+            return
+
+        if self.current_frame == 0:
+            # Already on a rest frame.
+            self.playing = False
+            self.timer = 0
+            return
+
+        elif self.current_frame == 1:
+            # Finish the step by advancing to frame 2.
+            self.stop_target_rest_frame = 2
+
+        elif self.current_frame == 2:
+            # Already on a rest frame.
+            self.playing = False
+            self.timer = 0
+            return
+
+        elif self.current_frame == 3:
+            # Finish the step by advancing through the cycle to frame 0.
+            self.stop_target_rest_frame = 0
+
+        self.stop_at_rest_frame = True
