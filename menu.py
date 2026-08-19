@@ -1,3 +1,4 @@
+import pygame
 from pathlib import Path
 from PIL import Image, ImageTk
 
@@ -8,14 +9,23 @@ cursor_path = (
     / "sprites"
     / "player"
     / "player_red_soul"
-    / "spr_heart_0.png"
+    / "spr_heartsmall.png"
 )
 
 
 class Menu:
     def __init__(self, game):
         self.game = game
-
+        self.menu_move = pygame.mixer.Sound(
+            BASE_DIR/
+            "sfx"/
+            "snd_menumove.wav"
+        )
+        self.menu_select = pygame.mixer.Sound(
+            BASE_DIR/
+            "sfx"/
+            "snd_menuselect.wav"
+        )
         # Canvas items
         self.canvas_items = []
         self.option_text = []
@@ -44,7 +54,7 @@ class Menu:
         # Soul cursor
         # --------------------------------
 
-        self.soul_scale = 0.5
+        self.soul_scale = 1
 
         self.cursor_image = Image.open(
             cursor_path
@@ -207,7 +217,7 @@ class Menu:
 
     def open(self):
         self.visible = True
-
+        self.menu_move.play()
         self.render_static()
         self.render_dynamic()
 
@@ -235,11 +245,13 @@ class Menu:
     def move_up(self):
         if self.selected > 0:
             self.selected -= 1
+            self.menu_move.play()
             self.render_dynamic()
 
     def move_down(self):
         if self.selected < len(self.options) - 1:
             self.selected += 1
+            self.menu_move.play()
             self.render_dynamic()
 
     # ======================================================
