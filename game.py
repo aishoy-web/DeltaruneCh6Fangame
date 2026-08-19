@@ -46,17 +46,6 @@ class Game:
         self.offset_x = 0
         self.offset_y = 0
         
-        #custom font initalization
-        listOfPreferredFonts = ["Determination Mono Web"]
-        listOfInstalledFonts = list(tk.font.families())
-        
-        self.BaseFont = customtkinter.CTkFont(family=listOfPreferredFonts[0], size=20)
-        
-        for font in listOfPreferredFonts:
-            if font in listOfInstalledFonts:
-                
-                break
-        
         # screen display
         self.create_widgets()
         self.load_dialogue()

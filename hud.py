@@ -149,6 +149,7 @@ class HUD:
         # --------------------------------
 
         small_font = self.game.ui_sprites.small_font
+        #main_font = self.game.ui_sprites.main_font
 
         self.small_font_images["LV"] = (
             small_font.render("LV")
