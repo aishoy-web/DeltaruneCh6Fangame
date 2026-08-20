@@ -1100,6 +1100,10 @@ class UISpriteSheet:
             "menu_box": self.sheet.crop(
                 (292, 177, 363, 251)
             ),
+
+            "menu_box_item": self.sheet.crop(
+                (370, 119, 543, 300)
+            )
         }
 
         # --------------------------------------------------
@@ -1108,6 +1112,7 @@ class UISpriteSheet:
 
         self.calibrated_sizes = {
             "menu_box": (71, 74),
+            "menu_box_item": (173, 181)
         }
 
         # --------------------------------------------------

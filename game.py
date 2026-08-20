@@ -85,6 +85,13 @@ class Game:
         self.fade_start_time = None
         self.fade_mode = None
         self.audio = AudioManager()
+
+        # Inventory
+        self.LW_inventory = [
+            "Ball of Junk",
+            "Glass",
+            "BlackShard"
+        ]
         
         # Create basic game objects
         self.load_room("myroom")
@@ -432,6 +439,8 @@ class Game:
             if current_choices: #if the current dialogue has a choice, display them
                 self.show_choices(current_choices)
     def advance_dialogue(self, event):
+        if self.state != "playing":
+            return
         if self.choice_active:
             return
         current = self.room.dialogue[self.dialogue_index]
@@ -485,35 +494,66 @@ class Game:
                 elif obj.action == "sound": #noisemakers
                     self.audio.play_sound(obj.data)
                 break
-        
+    def handle_z(self, event = None):
+        if self.transitioning:
+            return
+        if self.state == "menu":
+            self.menu.confirm()
+            return
+        self.advance_dialogue(event)
+        self.interact(event)
         # print(interaction_box) #Uncomment only if you want the dimensions of the interaction box to be printed in the terminal window
     def bind_keys(self):
         self.root.bind("<KeyPress>", self.key_press)
         self.root.bind("<KeyRelease>", self.key_release)
         self.root.bind("<space>", self.advance_dialogue)
         self.root.bind("<space>", self.interact)
-        self.root.bind("<z>", self.advance_dialogue)
-        self.root.bind("<z>", self.interact)
+        self.root.bind("<z>", self.handle_z)
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         if self.transitioning:
             return
+        # C = menu open / close
         if event.keysym == "c" and "c" not in self.keys_pressed:
             self.toggle_menu()
         self.keys_pressed.add(event.keysym)
-        if event.keysym in ("Left", "Right", "Up", "Down"):
+        # Direction keys
+        if event.keysym in (
+            "Left",
+            "Right",
+            "Up",
+            "Down"):
             if event.keysym in self.direction_keys:
                 self.direction_keys.remove(event.keysym)
-            self.direction_keys.append(event.keysym)
+            self.direction_keys.append(
+                event.keysym)
+        # Menu controls
         if self.state == "menu":
             if event.keysym == "Up":
                 self.menu.move_up()
             elif event.keysym == "Down":
                 self.menu.move_down()
+            elif event.keysym == "x":
+                self.handle_menu_back()
     def key_release(self, event):
         self.keys_pressed.discard(event.keysym)
         if event.keysym in self.direction_keys:
             self.direction_keys.remove(event.keysym)
+    def handle_menu_back(self):
+        if self.transitioning:
+            return
+        if self.state != "menu":
+            return
+        # Inside a submenu:
+        # X returns to the main menu.
+        if self.menu.screen != "main":
+            self.menu.back()
+            return
+        # Main menu:
+        # X closes the entire menu.
+        self.menu.close()
+        self.hud.close()
+        self.state = "playing"
     def toggle_menu(self, event=None):
         if self.transitioning:
             return
@@ -522,10 +562,12 @@ class Game:
             self.hud.open()
             self.state = "menu"
             self.player.animation.stop_at_next_rest_frame()
-        elif self.state == "menu":
-            self.menu.close()
-            self.hud.close()
-            self.state = "playing"
+            return
+        if self.menu.screen != "main":
+            return
+        self.menu.close()
+        self.hud.close()
+        self.state = "playing"
     def update_transition(self):
         elapsed = (time.perf_counter() - self.fade_start_time) * 1000
         progress = min(elapsed / self.fade_duration, 1.0)
