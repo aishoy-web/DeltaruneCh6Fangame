@@ -17,7 +17,7 @@ class HUD:
 
         self.status_sprite = None
 
-        # Kris uses the normal installed font
+        # Main bitmap-font item
         self.name_text = None
 
         # Small bitmap-font items
@@ -32,6 +32,7 @@ class HUD:
 
         # Keep PhotoImage references alive
         self.small_font_images = {}
+        self.main_font_images = {}
 
         # Player information
         self.level = 1
@@ -57,22 +58,15 @@ class HUD:
         )
 
         # --------------------------------
-        # Kris' name
+        # Kris
         #
-        # IMPORTANT:
-        # This remains Determination Mono Web.
+        # Now uses fnt_main.
         # --------------------------------
 
-        self.name_text = self.game.canvas.create_text(
+        self.name_text = self.game.canvas.create_image(
             0,
             0,
             anchor="nw",
-            text="Kris",
-            fill="white",
-            font=(
-                "Determination Mono Web",
-                42
-            ),
             state="hidden",
             tags=("hud",)
         )
@@ -145,11 +139,20 @@ class HUD:
     def update_text(self):
 
         # --------------------------------
+        # Generate main-font image
+        # --------------------------------
+
+        main_font = self.game.ui_sprites.main_font
+
+        self.main_font_images["Kris"] = (
+            main_font.render("Kris")
+        )
+
+        # --------------------------------
         # Generate small-font images
         # --------------------------------
 
         small_font = self.game.ui_sprites.small_font
-        #main_font = self.game.ui_sprites.main_font
 
         self.small_font_images["LV"] = (
             small_font.render("LV")
@@ -184,6 +187,11 @@ class HUD:
         # --------------------------------
         # Update Canvas images
         # --------------------------------
+
+        self.game.canvas.itemconfigure(
+            self.name_text,
+            image=self.main_font_images["Kris"]
+        )
 
         self.game.canvas.itemconfigure(
             self.level_label,
@@ -260,7 +268,7 @@ class HUD:
         # Kris
         # --------------------------------
 
-        name_x = self.status_x + 6 #Done, no touchy
+        name_x = self.status_x + 7
         name_y = self.status_y + 4
 
         name_x, name_y = self.game.ui_to_screen(
@@ -276,31 +284,23 @@ class HUD:
 
         # --------------------------------
         # Small-font stat positions
-        #
-        # These are native 320x240 UI coordinates.
         # --------------------------------
 
-        # LV
         lv_x = self.status_x + 7
         lv_y = self.status_y + 24
 
-        # LV value
         lv_value_x = self.status_x + 25
         lv_value_y = self.status_y + 24
 
-        # HP
         hp_x = self.status_x + 7
         hp_y = self.status_y + 33
 
-        # HP value
         hp_value_x = self.status_x + 25
         hp_value_y = self.status_y + 33
 
-        # $
         money_x = self.status_x + 7
         money_y = self.status_y + 42
 
-        # Money value
         money_value_x = self.status_x + 24
         money_value_y = self.status_y + 42
 
@@ -339,7 +339,7 @@ class HUD:
         )
 
         # --------------------------------
-        # Position small-font images
+        # Position bitmap-font images
         # --------------------------------
 
         self.game.canvas.coords(
@@ -380,10 +380,6 @@ class HUD:
 
     def render_static(self):
 
-        # --------------------------------
-        # Refresh scaled status sprite
-        # --------------------------------
-
         status_photo = self.game.ui_sprites.get(
             "status_box"
         )
@@ -393,17 +389,7 @@ class HUD:
             image=status_photo
         )
 
-        # --------------------------------
-        # Refresh small font
-        #
-        # Important when fullscreen scale changes.
-        # --------------------------------
-
         self.update_text()
-
-        # --------------------------------
-        # Position HUD
-        # --------------------------------
 
         self.layout_widgets()
 

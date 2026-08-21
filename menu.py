@@ -43,6 +43,8 @@ class Menu:
 
         self.item_text = []
         self.action_text = []
+        self.main_font_images = {}
+        self.action_font_images = {}
 
         # ==================================================
         # Menu state
@@ -270,18 +272,21 @@ class Menu:
         # Main menu options
         # --------------------------------------------------
 
+# --------------------------------------------------
+# Main menu options
+# --------------------------------------------------
+
         for option in self.options:
 
-            text = self.game.canvas.create_text(
+            image = self.game.ui_sprites.main_font.render(
+                option
+            )
+
+            text = self.game.canvas.create_image(
                 0,
                 0,
-                text=option,
                 anchor="nw",
-                font=(
-                    "Determination Mono Web",
-                    45
-                ),
-                fill="white",
+                image=image,
                 state="hidden",
                 tags=("menu",)
             )
@@ -294,16 +299,10 @@ class Menu:
 
         for _ in range(self.max_visible_items):
 
-            text = self.game.canvas.create_text(
+            text = self.game.canvas.create_image(
                 0,
                 0,
-                text="",
                 anchor="nw",
-                font=(
-                    "Determination Mono Web",
-                    45
-                ),
-                fill="white",
                 state="hidden",
                 tags=("menu",)
             )
@@ -320,16 +319,10 @@ class Menu:
             "DROP"
         ):
 
-            text = self.game.canvas.create_text(
+            text = self.game.canvas.create_image(
                 0,
                 0,
-                text=action,
                 anchor="nw",
-                font=(
-                    "Determination Mono Web",
-                    45
-                ),
-                fill="white",
                 state="hidden",
                 tags=("menu",)
             )
@@ -377,7 +370,7 @@ class Menu:
         ):
 
             x, y = self.game.ui_to_screen(
-                41,
+                42,
                 94 + i * 18
             )
 
@@ -415,7 +408,7 @@ class Menu:
             if i < len(inventory):
 
                 x, y = self.game.ui_to_screen(
-                    115,
+                    116,
                     40 + i * 16
                 )
 
@@ -425,28 +418,14 @@ class Menu:
                     y
                 )
 
-                self.game.canvas.itemconfigure(
-                    text,
-                    text=self.get_item_name(
-                        inventory[i]
-                    )
-                )
-
-            else:
-
-                self.game.canvas.itemconfigure(
-                    text,
-                    text=""
-                )
-
         # --------------------------------------------------
         # Bottom actions
         # --------------------------------------------------
 
         action_positions = [
-            (115, 180),
-            (163, 180),
-            (220, 180)
+            (116, 180),
+            (164, 180),
+            (221, 180)
         ]
 
         for text, (native_x, native_y) in zip(
@@ -579,17 +558,21 @@ class Menu:
             self.move_item_up()
             return
 
+        # Already at the top.
+        if self.selected == 0:
+            return
+
         start = self.selected
 
-        for _ in range(len(self.options)):
+        for index in range(
+            self.selected - 1,
+            -1,
+            -1
+        ):
 
-            self.selected = (
-                self.selected - 1
-            ) % len(self.options)
+            if self.option_enabled(index):
 
-            if self.option_enabled(
-                self.selected
-            ):
+                self.selected = index
                 self.menu_move.play()
                 self.render_dynamic()
                 return
@@ -605,17 +588,20 @@ class Menu:
             self.move_item_down()
             return
 
+        # Already at the bottom.
+        if self.selected == len(self.options) - 1:
+            return
+
         start = self.selected
 
-        for _ in range(len(self.options)):
+        for index in range(
+            self.selected + 1,
+            len(self.options)
+        ):
 
-            self.selected = (
-                self.selected + 1
-            ) % len(self.options)
+            if self.option_enabled(index):
 
-            if self.option_enabled(
-                self.selected
-            ):
+                self.selected = index
                 self.menu_move.play()
                 self.render_dynamic()
                 return
@@ -743,6 +729,23 @@ class Menu:
 
         if not self.canvas_items:
             self.create_widgets()
+        main_font = self.game.ui_sprites.main_font
+
+        for action, text in zip(
+            ("USE", "INFO", "DROP"),
+            self.action_text
+        ):
+
+            image = main_font.render(
+                action
+            )
+
+            self.action_font_images[action] = image
+
+            self.game.canvas.itemconfigure(
+                text,
+                image=image
+            )
 
         # --------------------------------------------------
         # Refresh main menu sprite
@@ -777,21 +780,30 @@ class Menu:
         self.refresh_cursor()
 
         # --------------------------------------------------
-        # Refresh option colors
+        # Refresh main menu option glyphs
         # --------------------------------------------------
 
-        for i, text in enumerate(
-            self.option_text
+        for i, (option, text) in enumerate(
+            zip(
+                self.options,
+                self.option_text
+            )
         ):
 
-            if self.option_enabled(i):
-                fill = "white"
-            else:
-                fill = "gray"
+            color = (
+                "white"
+                if self.option_enabled(i)
+                else "gray"
+            )
+
+            image = main_font.render(
+                option,
+                color=color
+            )
 
             self.game.canvas.itemconfigure(
                 text,
-                fill=fill
+                image=image
             )
 
         # --------------------------------------------------
@@ -800,25 +812,34 @@ class Menu:
 
         inventory = self.get_inventory()
 
+        main_font = self.game.ui_sprites.main_font
+
         for i, text in enumerate(
             self.item_text
         ):
 
             if i < len(inventory):
 
+                item_name = self.get_item_name(
+                    inventory[i]
+                )
+
+                image = main_font.render(
+                    item_name
+                )
+
+                self.main_font_images[i] = image
+
                 self.game.canvas.itemconfigure(
                     text,
-                    text=self.get_item_name(
-                        inventory[i]
-                    ),
-                    fill="white"
+                    image=image
                 )
 
             else:
 
                 self.game.canvas.itemconfigure(
                     text,
-                    text=""
+                    image=""
                 )
 
         # --------------------------------------------------
@@ -871,20 +892,32 @@ class Menu:
         )
 
         # --------------------------------------------------
-        # Keep ITEM's disabled state current
+        # Keep main menu options current
         # --------------------------------------------------
 
-        for i, text in enumerate(
-            self.option_text
+        main_font = self.game.ui_sprites.main_font
+
+        for i, (option, text) in enumerate(
+            zip(
+                self.options,
+                self.option_text
+            )
         ):
+
+            color = (
+                "white"
+                if self.option_enabled(i)
+                else "gray"
+            )
+
+            image = main_font.render(
+                option,
+                color=color
+            )
 
             self.game.canvas.itemconfigure(
                 text,
-                fill=(
-                    "white"
-                    if self.option_enabled(i)
-                    else "gray"
-                )
+                image=image
             )
 
         # --------------------------------------------------
@@ -899,18 +932,26 @@ class Menu:
 
             if i < len(inventory):
 
+                item_name = self.get_item_name(
+                    inventory[i]
+                )
+
+                image = main_font.render(
+                    item_name
+                )
+
+                self.main_font_images[i] = image
+
                 self.game.canvas.itemconfigure(
                     text,
-                    text=self.get_item_name(
-                        inventory[i]
-                    )
+                    image=image
                 )
 
             else:
 
                 self.game.canvas.itemconfigure(
                     text,
-                    text=""
+                    image=""
                 )
 
         self.game.canvas.tag_raise(

@@ -513,28 +513,35 @@ class Game:
     def key_press(self, event):
         if self.transitioning:
             return
+        key = event.keysym
+        # Ignore repeated KeyPress events while a key is held
+        if key in self.keys_pressed:
+            return
+        self.keys_pressed.add(key)
         # C = menu open / close
-        if event.keysym == "c" and "c" not in self.keys_pressed:
+        if key == "c":
             self.toggle_menu()
-        self.keys_pressed.add(event.keysym)
+            return
+        # Menu controls
+        if self.state == "menu":
+            if key == "Up":
+                self.menu.move_up()
+                return
+            elif key == "Down":
+                self.menu.move_down()
+                return
+            elif key == "x":
+                self.handle_menu_back()
+                return
         # Direction keys
-        if event.keysym in (
+        if key in (
             "Left",
             "Right",
             "Up",
             "Down"):
-            if event.keysym in self.direction_keys:
-                self.direction_keys.remove(event.keysym)
-            self.direction_keys.append(
-                event.keysym)
-        # Menu controls
-        if self.state == "menu":
-            if event.keysym == "Up":
-                self.menu.move_up()
-            elif event.keysym == "Down":
-                self.menu.move_down()
-            elif event.keysym == "x":
-                self.handle_menu_back()
+            if key in self.direction_keys:
+                self.direction_keys.remove(key)
+            self.direction_keys.append(key)
     def key_release(self, event):
         self.keys_pressed.discard(event.keysym)
         if event.keysym in self.direction_keys:

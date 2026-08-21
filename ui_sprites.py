@@ -895,12 +895,12 @@ class MainFont:
         },
 
         "P": {
-            "x": 14,
-            "y": 18,
+            "x": 34,
+            "y": 51,
             "w": 6,
-            "h": 5,
+            "h": 13,
             "offset": 0,
-            "shift": 5,
+            "shift": 7,
         },
         
         "Q": {
@@ -941,7 +941,7 @@ class MainFont:
         
         "U": {
             "x": 42,
-            "y": 10,
+            "y": 51,
             "w": 6,
             "h": 13,
             "offset": 0,
@@ -1009,6 +1009,15 @@ class MainFont:
         "b": {
             "x": 98,
             "y": 51,
+            "w": 6,
+            "h": 13,
+            "offset": 0,
+            "shift": 7,
+        },
+
+        "c": {
+            "x": 68,
+            "y": 20,
             "w": 6,
             "h": 13,
             "offset": 0,
@@ -1227,10 +1236,6 @@ class MainFont:
         self.game = game
 
         #open fonts
-        self.smFont = Image.open(
-            SMALL_FONT_PATH
-        ).convert("RGBA")
-
         self.mnFont = Image.open(
             MAIN_FONT_PATH
         ).convert("RGBA")
@@ -1241,7 +1246,7 @@ class MainFont:
         #
         self.cache = {}
 
-    def render(self, text):
+    def render(self, text, color = "white"):
         """
         The font is rendered at native UI resolution,
         then scaled with the game's current scale.
@@ -1254,7 +1259,8 @@ class MainFont:
 
         cache_key = (
             text,
-            scale_key
+            scale_key,
+            color
         )
 
         if cache_key in self.cache:
@@ -1310,7 +1316,7 @@ class MainFont:
 
         for char, glyph in glyphs:
 
-            glyph_image = self.smFont.crop(
+            glyph_image = self.mnFont.crop(
                 (
                     glyph["x"],
                     glyph["y"],
@@ -1318,6 +1324,18 @@ class MainFont:
                     glyph["y"] + glyph["h"]
                 )
             )
+
+            colored_glyph = Image.new(
+                "RGBA",
+                glyph_image.size,
+                color
+            )
+
+            colored_glyph.putalpha(
+                glyph_image.getchannel("A")
+            )
+
+            glyph_image = colored_glyph
 
             image.alpha_composite(
                 glyph_image,
@@ -1414,7 +1432,7 @@ class UISpriteSheet:
         # --------------------------------------------------
 
         self.small_font = SmallFont(game)
-        #self.main_font = MainFont(game)
+        self.main_font = MainFont(game)
 
     def get(self, name):
         """
