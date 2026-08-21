@@ -38,7 +38,9 @@ class Menu:
         self.option_text = []
 
         self.menu_sprite = None
-        self.item_menu_sprite = None
+        self.menu_sprite_item = None
+        self.menu_sprite_stat = None
+        self.menu_sprite_cell = None
         self.cursor = None
 
         self.item_text = []
@@ -54,6 +56,7 @@ class Menu:
 
         # "main" = ITEM / STAT / CELL
         # "item" = inventory screen
+        # "stat" = stat screen
         self.screen = "main"
 
         self.selected = 0
@@ -84,6 +87,12 @@ class Menu:
         # reference layout.
         self.item_menu_x = 94
         self.item_menu_y = 26
+
+        # ==================================================
+        # Stat menu position
+        # ==================================================
+        self.stat_menu_x = 94
+        self.stat_menu_y = 26
 
         # ==================================================
         # Soul cursor
@@ -244,12 +253,27 @@ class Menu:
         # Item menu box
         # --------------------------------------------------
 
-        self.item_menu_sprite = self.game.canvas.create_image(
+        self.menu_sprite_item = self.game.canvas.create_image(
             0,
             0,
             anchor="nw",
             image=self.game.ui_sprites.get(
                 "menu_box_item"
+            ),
+            state="hidden",
+            tags=("menu",)
+        )
+
+        # --------------------------------------------------
+        # Stat menu box
+        # --------------------------------------------------
+
+        self.menu_sprite_stat = self.game.canvas.create_image(
+            0,
+            0,
+            anchor="nw",
+            image=self.game.ui_sprites.get(
+                "menu_box_stat"
             ),
             state="hidden",
             tags=("menu",)
@@ -332,7 +356,8 @@ class Menu:
         self.canvas_items.extend(
             [
                 self.menu_sprite,
-                self.item_menu_sprite,
+                self.menu_sprite_item,
+                self.menu_sprite_stat,
                 self.cursor,
                 *self.option_text,
                 *self.item_text,
@@ -390,7 +415,19 @@ class Menu:
         )
 
         self.game.canvas.coords(
-            self.item_menu_sprite,
+            self.menu_sprite_item,
+            x,
+            y
+        )
+
+        # --------------------------------------------------
+        # Stat menu box
+        # --------------------------------------------------
+        x, y = self.game.ui_to_screen(
+            self.stat_menu_x,
+            self.stat_menu_y)
+        self.game.canvas.coords(
+            self.menu_sprite_stat,
             x,
             y
         )
@@ -482,7 +519,7 @@ class Menu:
         )
 
         self.game.canvas.itemconfigure(
-            self.item_menu_sprite,
+            self.menu_sprite_item,
             state=(
                 "normal"
                 if item_visible
@@ -512,7 +549,23 @@ class Menu:
 
         self.game.canvas.itemconfigure(
             self.cursor,
-            state="normal"
+            state=(
+                "normal"
+                if self.screen in ("main", "item")
+                else "hidden"
+            )
+        )
+
+        stat_visible = (
+            self.screen == "stat"
+        )
+        self.game.canvas.itemconfigure(
+            self.menu_sprite_stat,
+            state = (
+                "normal"
+                if stat_visible
+                else "hidden"
+            )
         )
 
     # ======================================================
@@ -558,6 +611,9 @@ class Menu:
             self.move_item_up()
             return
 
+        if self.screen == "stat":
+            return
+
         # Already at the top.
         if self.selected == 0:
             return
@@ -586,6 +642,9 @@ class Menu:
 
         if self.screen == "item":
             self.move_item_down()
+            return
+
+        if self.screen == "stat":
             return
 
         # Already at the bottom.
@@ -682,8 +741,16 @@ class Menu:
                 )
 
                 return
-
-            # STAT and CELL will be implemented later.
+            elif option == "STAT":
+                self.menu_select.play()
+                self.screen = "stat"
+                self.render_static()
+                self.render_dynamic()
+                self.update_visibility()
+                self.game.canvas.tag_raise("menu")
+                return
+        
+            # CELL will be implemented later.
             return
 
         # --------------------------------------------------
@@ -706,12 +773,13 @@ class Menu:
         if not self.visible:
             return
 
-        if self.screen == "item":
+        if self.screen in ("item", "stat", "cell"):
+
+            if self.screen in ("stat", "cell"):
+                self.menu_move.play()
 
             self.screen = "main"
             self.normalize_selection()
-
-            # self.menu_move.play() # For some reason, backing out of ITEM doesn't play menu_move, but STAT and CELL will(?)
 
             self.render_static()
             self.render_dynamic()
@@ -769,8 +837,21 @@ class Menu:
         )
 
         self.game.canvas.itemconfigure(
-            self.item_menu_sprite,
+            self.menu_sprite_item,
             image=item_menu_photo
+        )
+
+        # --------------------------------------------------
+        # Refresh stat menu sprite
+        # --------------------------------------------------
+
+        stat_menu_photo = self.game.ui_sprites.get(
+            "menu_box_stat"
+        )
+
+        self.game.canvas.itemconfigure(
+            self.menu_sprite_stat,
+            image=stat_menu_photo
         )
 
         # --------------------------------------------------
@@ -872,13 +953,17 @@ class Menu:
                 + self.selected * 18
             )
 
-        else:
+        elif self.screen == "item":
 
-            cursor_x = 104 #These values are for when the soul cursor is in ITEM.
+            cursor_x = 104
             cursor_y = (
                 44
-                + self.item_selected * 16 # Test 
+                + self.item_selected * 16
             )
+
+        else:
+            # STAT has no cursor.
+            return
 
         x, y = self.game.ui_to_screen(
             cursor_x,
