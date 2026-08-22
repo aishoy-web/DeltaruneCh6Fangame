@@ -70,7 +70,7 @@ class Menu:
 
         # Maximum number of inventory entries currently
         # displayed in the Item window.
-        self.max_visible_items = 10
+        self.max_visible_items = 8
 
         # ==================================================
         # Main menu position
