@@ -49,9 +49,20 @@ BASE_DIR = Path(__file__).parent
         -The spawn_x and spawn_y attributes represent the position of the player when they enter the new room.
         -The facing_direction attribute represents the direction the player will be facing when they enter the new room.
         
-    see this bedroom below for reference.
+    dont forget to add the room to the ROOMS dictionary at the bottom of this file, or it will not be accessible in the game.
         
 '''
+
+# File select
+mainMenu = Room(
+    name="mainMenu",
+    background="file_select_back.png",
+    collisions = [],
+    music="faint_glow.flac",
+    interactable_objects = None,
+    dialogue=[],
+    exits=[],
+)
 
 bedroom = Room(
     name="myroom",
@@ -179,6 +190,7 @@ livingroom = Room(
 
 )
 
-ROOMS = {"myroom": bedroom, # Keep this room dictionary at the end of rooms.py so other files can reference it.
-         "myhallway": hallway,
-         "torhouse": livingroom,}
+ROOMS = {mainMenu.name: mainMenu,
+         bedroom.name: bedroom, # Keep this room dictionary at the end of rooms.py so other files can reference it.
+         hallway.name: hallway,
+         livingroom.name: livingroom,}

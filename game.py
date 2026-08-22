@@ -99,7 +99,7 @@ class Game:
         ]
         
         # Create basic game objects
-        self.load_room("myroom")
+        self.load_room("mainMenu")
         self.player = Player(self)
         self.menu = Menu(self)
         
@@ -109,10 +109,10 @@ class Game:
         self.transitioning = False
         self.state = "playing"
         self.update()
-        self.typing = True
+        '''self.typing = True
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
             self.dialogue_data = json.load(f)
-        self.type_text()
+        self.type_text()'''
     def start_dialogue(self, dialogue=None, lock_player=True):
         self.dialogue_active = True
         self.dialogue_blocks_movement = lock_player
@@ -639,6 +639,42 @@ class Game:
                 if trigger.once:
                     self.triggered_events.add(trigger.id)
                 return
+    '''
+        Main Menu functions: 
+            -Load(), which continues the game from a saved slot.
+            -Erase(), which erases a saved slot.
+            -Copy(), which copies a saved slot to another slot.
+            -New(), which creates a new saved slot. (with the option to carry over data from a previous save, like the original game)
+            -ChangeLanguage(), which changes the language of the game. 
+                (with the option to change it back to english, or to a different language)
+            -EndProgram(), which ends the program and closes the game.
+        
+        Other Expectations for the main menu:
+            -The room has three save slots split apart in a similar manner as the dialogue boxes weve made
+            -dont forget the "CHAPTER 6" text at the top left of the screen, and the "DELTARUNE" text at the bottom right of the screen.
+                (in addition to copyright info and stuff)
+            -not sure how much we wanna put into language support, but the modes of language should have a unique character set
+    '''
+    def load(self, slot):
+        # Load the game from the specified slot
+        pass
+    def erase(self, slot):
+        # Erase the specified save slot
+        pass
+    def copy(self, source_slot, target_slot):
+        # Copy the game from source_slot to target_slot
+        pass
+    def new(self, slot):
+        # Create a new save slot
+        pass
+    def change_language(self, language):
+        # Change the language of the game
+        pass            
+    def end_program(self):
+        # End the program and close the game
+        self.root.destroy()
+        #yeah thats kinda it just call this function lol
+    #Main Update function
     def update(self):
         if self.transitioning:
             self.update_transition()
