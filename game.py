@@ -1,3 +1,4 @@
+from fileinput import filename
 import tkinter as tk
 import customtkinter
 import time
@@ -11,6 +12,9 @@ from dialogue_box import DialogueBox
 import json
 from audiomanager import AudioManager
 from menu import Menu
+import os #file manip
+
+
 BASE_DIR = Path(__file__).resolve().parent
 
 ''' 
@@ -652,23 +656,55 @@ class Game:
     '''
     def load(self, slot):
         # Load the game from the specified slot
+        # first we find our save file
+        filename = f"filech6_{slot}.json"
+        
+        #then we fetch the data
+        with open(filename, "r") as file:
+            data = json.load(file)
+                
+        #then give it a return and handle it in the main menu
+        return data
+
+    def save(self, slot, data):
+        # where data is a dictionary containing the game state to be saved (e.g. "{plrX: 0, plrY: 0, room: "room_id", flags: {...}}")
+        # Save the game to the specified slot
+        filename = f"filech6_{slot}.json"
+        
+        with open(filename, "w") as file:
+            json.dump(data, file, indent=4)
+        print("Game saved successfully!") #temp for ensuring things work, delete later
         pass
     def erase(self, slot):
         # Erase the specified save slot
+        filename = f"filech6_{slot}.json"
+        
+        if os.path.exists(filename):
+            os.remove(filename)
+            print(f"Save slot {slot} erased successfully.") #temp for ensuring things work, delete later
+        else:
+            print(f"Save slot {slot} does not exist.") #temp for ensuring things work, delete later
         pass
     def copy(self, source_slot, target_slot):
         # Copy the game from source_slot to target_slot
+        loaded_data = self.load(source_slot)
+        self.save(target_slot, loaded_data)
+        #pretty neat to reuse save functions, right?
+        
+        print(f"Save slot {source_slot} copied to {target_slot}.") #temp for ensuring things work, delete later
         pass
     def new(self, slot):
-        # Create a new save slot
+        # Create a new save slot from a possible DltRn chapter 5 save file, or just a blank save file if none is provided
+        # TODO
         pass
     def change_language(self, language):
         # Change the language of the game
+        # TODO
         pass            
     def end_program(self):
         # End the program and close the game
         self.root.destroy()
-        #yeah thats kinda it just call this function lol
+        #yeah thats kinda it just call this function to close the game lol
     #Main Update function
     def update(self):
         if self.transitioning:
