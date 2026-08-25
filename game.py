@@ -523,14 +523,17 @@ class Game:
         if self.transitioning:
             return
         key = event.keysym
+        
         # Ignore repeated KeyPress events while a key is held
         if key in self.keys_pressed:
             return
         self.keys_pressed.add(key)
+        
         # C = menu open / close
         if key == "c":
             self.toggle_menu()
             return
+        
         # Menu controls
         if self.state == "menu":
             if key == "Up":
@@ -542,6 +545,7 @@ class Game:
             elif key == "x":
                 self.handle_menu_back()
                 return
+            
         # Direction keys
         if key in (
             "Left",

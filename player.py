@@ -4,16 +4,28 @@ from animated_sprite import AnimatedSprite
 BASE_DIR = Path(__file__).parent
 sprite_path = BASE_DIR/"sprites"/"player"/"spr_krisd"/"spr_krisd_0.png"
 sprite_sheet_path = BASE_DIR/"sprites"/"player"/"kris_spritesheet_1+2.png"
+
+'''
+    The player class, it does what you expect.
+        -TODO: add dark world varients for sprites, and possibly add a darkworld player class that inherits from this one, but that can wait for when we actually implement the darkworld menu.
+'''
+
 class Player:
     def __init__(self, game):
+        # inheritance init
         self.game = game
         self.room = game.room
+        
+        # player overworld stats
         self.x = 160
         self.y = 110
         self.walk_speed = 3 # Controls walking speed
         self.run_speed = self.walk_speed * 1.75
         self.speed = 0
         self.acceleration = 0.4
+        
+        # player sprite and animation
+        self.invisible = True # player is invisible until the game starts, just change this when the game starts
         self.photo = None
         self.canvas_sprite = None
         self.animation = AnimatedSprite(
@@ -39,6 +51,8 @@ class Player:
         self.hitbox_offset_y = 32
         self.last_scale = None
         self.facing = "down"
+        
+        # debug
         if self.game.debug_mode:
             self.hitbox_debug = self.game.canvas.create_rectangle(
                 0,0,0,0,
@@ -145,20 +159,25 @@ class Player:
         scaled = frame.resize((int(frame.width * self.game.scale),int(frame.height * self.game.scale)),Image.Resampling.NEAREST)
         self.photo = ImageTk.PhotoImage(scaled)
         canvas_x, canvas_y = self.game.game_to_screen(self.x, self.y)
-        if self.canvas_sprite is None:
-            self.canvas_sprite = self.game.canvas.create_image(
+        
+        # render the player sprite on the canvas if the player is not invisible
+        if not self.invisible:
+            if self.canvas_sprite is None:
+                self.canvas_sprite = self.game.canvas.create_image(
+                        canvas_x,
+                        canvas_y,
+                        image=self.photo,
+                        anchor="nw")
+            else:
+                self.game.canvas.coords(
+                    self.canvas_sprite,
                     canvas_x,
-                    canvas_y,
-                    image=self.photo,
-                    anchor="nw")
-        else:
-            self.game.canvas.coords(
-                self.canvas_sprite,
-                canvas_x,
-                canvas_y)
-            self.game.canvas.itemconfig(
-                self.canvas_sprite,
-                image=self.photo)    
+                    canvas_y)
+                self.game.canvas.itemconfig(
+                    self.canvas_sprite,
+                    image=self.photo)    
+            
+        # if in debug, show the hitbox
         if self.hitbox_debug is not None:
             self.game.canvas.coords(
                 self.hitbox_debug,
