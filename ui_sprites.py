@@ -1055,7 +1055,7 @@ class MainFont:
             "x": 2,
             "y": 2,
             "w": 6,
-            "h": 13,
+            "h": 16,
             "offset": 0,
             "shift": 7,
         },

@@ -94,7 +94,12 @@ class Game:
         self.LW_inventory = [
             "Ball of Junk",
             "Glass",
-            "BlackShard"
+            "BlackShard",
+            "Elite Ball Knowledge",
+            "Bread",
+            "How to Draw Dragons",
+            "Seeds",
+            "Anime Figurine"
         ]
         
         # Create basic game objects
