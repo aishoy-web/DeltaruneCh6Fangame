@@ -517,7 +517,6 @@ class Game:
         self.root.bind("<KeyRelease>", self.key_release)
         self.root.bind("<space>", self.advance_dialogue)
         self.root.bind("<space>", self.interact)
-        self.root.bind("<z>", self.handle_z)
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         if self.transitioning:
@@ -532,6 +531,9 @@ class Game:
         # C = menu open / close
         if key == "c":
             self.toggle_menu()
+            return
+        elif key == "z": #assuming ive done it right then this should just call the handle_z function, which will handle dialogue and interaction
+            self.handle_z()
             return
         
         # Menu controls
