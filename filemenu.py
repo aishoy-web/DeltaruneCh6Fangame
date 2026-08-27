@@ -51,6 +51,24 @@ class FileMenu:
             main_font.render("Please select a file.")
         )
     
-        self.main_font_images[self.game.player.name] = (
-            main_font.render(self.game.player.name)
+        self.main_font_images[self.game.slot1.name] = (
+            main_font.render(self.game)
         )
+        
+        #call to get text functions updated
+        self.update_text()
+    
+    def update_text(self):
+        
+        self.layout_widgets()
+        
+    def layout_widgets(self):
+    
+        #x and y positions for the slots
+        slot_x = 100
+        slot_y = 100
+
+    def render_static(self):
+        self.update_text()
+
+        self.layout_widgets()

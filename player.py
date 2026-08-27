@@ -23,7 +23,6 @@ class Player:
         self.run_speed = self.walk_speed * 1.75
         self.speed = 0
         self.acceleration = 0.4
-        self.name = "Kris"
         
         # player sprite and animation
         self.invisible = True # player is invisible until the game starts, just change this when the game starts
