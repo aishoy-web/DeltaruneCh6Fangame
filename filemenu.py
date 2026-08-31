@@ -65,8 +65,34 @@ class FileMenu:
     def layout_widgets(self):
     
         #x and y positions for the slots
-        slot_x = 100
-        slot_y = 100
+        #currently not adjusting for screen size, TODO: fix this
+        slot1_x = 100
+        slot1_y = 100
+        slot2_x = 100
+        slot2_y = 500
+        slot3_x = 100
+        slot3_y = 900
+        
+        self.slot1_sprite = self.game.canvas.create_image(
+                    slot1_x,
+                    slot1_y,
+                    anchor="nw",
+                    image=self.game.ui_sprites.get("dialogue_box"),
+                )
+        
+        self.slot2_sprite = self.game.canvas.create_image(
+                    slot2_x,
+                    slot2_y,
+                    anchor="nw",
+                    image=self.game.ui_sprites.get("dialogue_box"),
+                )
+        
+        self.slot3_sprite = self.game.canvas.create_image(
+                    slot3_x,
+                    slot3_y,
+                    anchor="nw",
+                    image=self.game.ui_sprites.get("dialogue_box"),
+                )
 
     def render_static(self):
         self.update_text()

@@ -8,6 +8,7 @@ from PIL import Image, ImageTk
 from ui_sprites import UISpriteSheet
 from hud import HUD
 from player import Player
+from filemenu import FileMenu
 from dialogue_box import DialogueBox
 import json
 from audiomanager import AudioManager
@@ -50,6 +51,15 @@ class Game:
         self.offset_x = 0
         self.offset_y = 0
         
+        #slot stuff
+        #remove later, for now exists to initalize the file select
+        self.slot1 = type('Slot', (), {})()  # Create a simple object for slot1
+        self.slot1.name = "-----"
+        self.slot2 = type('Slot', (), {})()  # Create a simple object for slot1
+        self.slot2.name = "-----"
+        self.slot3 = type('Slot', (), {})()  # Create a simple object for slot1
+        self.slot3.name = "-----"
+        
         # screen display
         self.create_widgets()
         self.load_dialogue()
@@ -89,6 +99,10 @@ class Game:
         self.fade_start_time = None
         self.fade_mode = None
         self.audio = AudioManager()
+        
+        #file select
+        self.file_menu = FileMenu(self)
+        self.file_menu.create_widgets()
 
         # Inventory
         self.LW_inventory = [
@@ -277,6 +291,7 @@ class Game:
         self.render_background()
         self.hud.render_static()
         self.menu.render_static()
+        self.file_menu.render_static()
         self.render_debug_static()
         self.dialogue_box.render_static()
     def render_dynamic(self):
