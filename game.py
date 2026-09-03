@@ -14,6 +14,7 @@ from dialogue_box import DialogueBox
 import json
 from audiomanager import AudioManager
 from menu import Menu
+from progress import ProgressTracker
 import os #file manip
 
 
@@ -732,7 +733,7 @@ class Game:
     def change_language(self, language):
         # Change the language of the game
         # TODO
-        pass            
+        pass
     def end_program(self):
         # End the program and close the game
         self.root.destroy()

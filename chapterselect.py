@@ -4,6 +4,7 @@ from PIL import Image, ImageTk, ImageDraw
 from pathlib import Path
 from ui_sprites import MainFont
 from audiomanager import AudioManager
+from progress import ProgressTracker
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -170,6 +171,7 @@ class ChapterSelect:
         self.offset_y = 0
         self.main_font = MainFont(self)
         self.audio = AudioManager()
+        self.progress = ProgressTracker()
         self.main_font_images = {}
         self.footer_info_photo = None
         self.selection = "chapters"
@@ -177,6 +179,7 @@ class ChapterSelect:
         self.footer_index = 0
         self.confirm_index = 0
 
+        self.star_photos = []
         self.chapters = []
         self.available_chapters = 6
 
@@ -208,6 +211,7 @@ class ChapterSelect:
 
         self.load_assets()
         self.create_chapters()
+        self.refresh_progress()
 
         # ==================================================
         # Canvas
@@ -296,6 +300,43 @@ class ChapterSelect:
             ).convert("RGBA")
         else:
             self.star_image = None
+
+    def refresh_progress(self):
+        for chapter in self.chapters:
+
+            number = chapter["number"]
+
+            chapter["completed"] = (
+                self.progress.completed_chapter_any_slot(
+                    number
+                )
+            )
+
+            chapter["completion_slots"] = (
+                self.progress.completion_slots(
+                    number
+                )
+            )
+
+            chapter["secret_boss_fought"] = (
+                self.progress.fought_secret_boss_any_slot(
+                    number
+                )
+            )
+
+        self.shadow_crystal_chapters = [
+            chapter["number"]
+            for chapter in self.chapters
+            if chapter.get(
+                "secret_boss_fought",
+                False
+            )
+        ]
+
+        self.shadow_crystal_count = len(
+            self.shadow_crystal_chapters
+        )
+
 
     # ======================================================
     # CHAPTER ICONS
@@ -1318,9 +1359,9 @@ class ChapterSelect:
 
         for i, chapter in enumerate(self.chapters):
 
-            completed = (
-                chapter["number"]
-                in self.completed_chapters
+            completed = chapter.get(
+                "completed",
+                False
             )
 
             for star_index, item in enumerate(
@@ -1428,7 +1469,8 @@ class ChapterSelect:
 
         info_image = self.main_font.render(
             "(C) Toby Fox 2018-2026\n"
-            "Exdwarf 2026-2027\n"
+            "Exdwarf, Coolblubird\n"
+              "2026-2027\n"
             "DELTARUNE v23",
             color=GRAY,
             scale_multiplier=FOOTER_INFO_SCALE
