@@ -1,3 +1,4 @@
+from fileinput import filename
 import tkinter as tk
 import customtkinter
 import time
@@ -8,10 +9,14 @@ from chapterselect import ChapterSelect
 from ui_sprites import UISpriteSheet
 from hud import HUD
 from player import Player
+from filemenu import FileMenu
 from dialogue_box import DialogueBox
 import json
 from audiomanager import AudioManager
 from menu import Menu
+import os #file manip
+
+
 BASE_DIR = Path(__file__).resolve().parent
 
 ''' 
@@ -46,6 +51,15 @@ class Game:
         self.camera_zoom = 1.0
         self.offset_x = 0
         self.offset_y = 0
+        
+        #slot stuff
+        #remove later, for now exists to initalize the file select
+        self.slot1 = type('Slot', (), {})()  # Create a simple object for slot1
+        self.slot1.name = "-----"
+        self.slot2 = type('Slot', (), {})()  # Create a simple object for slot1
+        self.slot2.name = "-----"
+        self.slot3 = type('Slot', (), {})()  # Create a simple object for slot1
+        self.slot3.name = "-----"
         
         # screen display
         self.create_widgets()
@@ -86,6 +100,10 @@ class Game:
         self.fade_start_time = None
         self.fade_mode = None
         self.audio = AudioManager()
+        
+        #file select
+        self.file_menu = FileMenu(self)
+        self.file_menu.create_widgets()
 
         # Inventory
         self.LW_inventory = [
@@ -275,6 +293,7 @@ class Game:
         self.render_background()
         self.hud.render_static()
         self.menu.render_static()
+        self.file_menu.render_static()
         self.render_debug_static()
         self.dialogue_box.render_static()
     def render_dynamic(self):
@@ -515,7 +534,6 @@ class Game:
         self.root.bind("<KeyRelease>", self.key_release)
         self.root.bind("<space>", self.advance_dialogue)
         self.root.bind("<space>", self.interact)
-        self.root.bind("<z>", self.handle_z)
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         key = event.keysym
@@ -526,17 +544,19 @@ class Game:
         if self.transitioning:
             return
         key = event.keysym
+        
         # Ignore repeated KeyPress events while a key is held
         if key in self.keys_pressed:
             return
         self.keys_pressed.add(key)
-        if self.state == "chapter_select":
-            self.chapter_select.handle_input(key)
-            return
         # C = menu open / close
         if key == "c":
             self.toggle_menu()
             return
+        elif key == "z": #assuming ive done it right then this should just call the handle_z function, which will handle dialogue and interaction
+            self.handle_z()
+            return
+        
         # Menu controls
         if self.state == "menu":
             if key == "Up":
@@ -548,6 +568,7 @@ class Game:
             elif key == "x":
                 self.handle_menu_back()
                 return
+            
         # Direction keys
         if key in (
             "Left",
@@ -667,23 +688,55 @@ class Game:
     '''
     def load(self, slot):
         # Load the game from the specified slot
+        # first we find our save file
+        filename = f"filech6_{slot}.json"
+        
+        #then we fetch the data
+        with open(filename, "r") as file:
+            data = json.load(file)
+                
+        #then give it a return and handle it in the main menu
+        return data
+
+    def save(self, slot, data):
+        # where data is a dictionary containing the game state to be saved (e.g. "{plrX: 0, plrY: 0, room: "room_id", flags: {...}}")
+        # Save the game to the specified slot
+        filename = f"filech6_{slot}.json"
+        
+        with open(filename, "w") as file:
+            json.dump(data, file, indent=4)
+        print("Game saved successfully!") #temp for ensuring things work, delete later
         pass
     def erase(self, slot):
         # Erase the specified save slot
+        filename = f"filech6_{slot}.json"
+        
+        if os.path.exists(filename):
+            os.remove(filename)
+            print(f"Save slot {slot} erased successfully.") #temp for ensuring things work, delete later
+        else:
+            print(f"Save slot {slot} does not exist.") #temp for ensuring things work, delete later
         pass
     def copy(self, source_slot, target_slot):
         # Copy the game from source_slot to target_slot
+        loaded_data = self.load(source_slot)
+        self.save(target_slot, loaded_data)
+        #pretty neat to reuse save functions, right?
+        
+        print(f"Save slot {source_slot} copied to {target_slot}.") #temp for ensuring things work, delete later
         pass
     def new(self, slot):
-        # Create a new save slot
+        # Create a new save slot from a possible DltRn chapter 5 save file, or just a blank save file if none is provided
+        # TODO
         pass
     def change_language(self, language):
         # Change the language of the game
+        # TODO
         pass            
     def end_program(self):
         # End the program and close the game
         self.root.destroy()
-        #yeah thats kinda it just call this function lol
+        #yeah thats kinda it just call this function to close the game lol
     #Main Update function
     def update(self):
         if self.transitioning:
