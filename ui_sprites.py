@@ -2,7 +2,7 @@
 # and rendering the Deltarune small bitmap font.
 
 from pathlib import Path
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageColor
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1136,7 +1136,7 @@ class MainFont:
             "x": 34,
             "y": 2,
             "w": 6,
-            "h": 13,
+            "h": 16,
             "offset": 0,
             "shift": 7,
         },
@@ -1240,22 +1240,51 @@ class MainFont:
             MAIN_FONT_PATH
         ).convert("RGBA")
 
-        # Cache:
-        #
-        # (text, scale) -> PhotoImage
-        #
+        self.glyphs = {}
+
         self.cache = {}
 
-    def render(self, text, color = "white"):
+
+
+    def render(
+        self,
+        text,
+        color="white",
+        scale_multiplier=1.0
+    ):
         """
-        The font is rendered at native UI resolution,
-        then scaled with the game's current scale.
+        Render fnt_main bitmap text.
+
+        Supports:
+            - Multiple lines using \\n
+            - Normal game scaling
+            - Independent scale_multiplier
+            - Color tinting
+            - Cached PhotoImages
         """
 
         text = str(text)
 
-        scale = float(self.game.scale)
-        scale_key = round(scale, 4)
+        # --------------------------------------------------
+        # Scale
+        # --------------------------------------------------
+
+        game_scale = float(self.game.scale)
+        scale_multiplier = float(scale_multiplier)
+
+        final_scale = (
+            game_scale
+            * scale_multiplier
+        )
+
+        scale_key = round(
+            final_scale,
+            4
+        )
+
+        # --------------------------------------------------
+        # Cache
+        # --------------------------------------------------
 
         cache_key = (
             text,
@@ -1266,99 +1295,215 @@ class MainFont:
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        # ------------------------------------------
-        # Calculate native dimensions
-        # ------------------------------------------
+        # --------------------------------------------------
+        # Split into lines
+        # --------------------------------------------------
 
-        glyphs = []
+        lines = text.split("\n")
 
-        total_width = 0
-        max_height = 1
+        if not lines:
+            lines = [""]
 
-        for char in text:
+        # --------------------------------------------------
+        # Convert color
+        # --------------------------------------------------
 
-            # Unsupported characters are ignored.
-            if char not in self.GLYPHS:
-                continue
+        if isinstance(color, str):
 
-            glyph = self.GLYPHS[char]
-
-            glyphs.append(
-                (char, glyph)
+            color_rgb = ImageColor.getrgb(
+                color
             )
 
-            total_width += glyph["shift"]
+        else:
+
+            color_rgb = color
+
+        # --------------------------------------------------
+        # Analyze every line
+        # --------------------------------------------------
+
+        line_data = []
+
+        max_width = 1
+        max_height = 1
+
+        for line in lines:
+
+            glyphs = []
+
+            total_width = 0
+            line_height = 1
+
+            for char in line:
+
+                # Unsupported characters are ignored.
+                if char not in self.GLYPHS:
+                    continue
+
+                glyph = self.GLYPHS[char]
+
+                glyphs.append(
+                    (char, glyph)
+                )
+
+                total_width += glyph["shift"]
+
+                line_height = max(
+                    line_height,
+                    glyph["h"]
+                    + glyph["offset"]
+                )
+
+            total_width = max(
+                1,
+                total_width
+            )
+
+            line_height = max(
+                1,
+                line_height
+            )
+
+            line_data.append(
+                (
+                    glyphs,
+                    total_width,
+                    line_height
+                )
+            )
+
+            max_width = max(
+                max_width,
+                total_width
+            )
 
             max_height = max(
                 max_height,
-                glyph["h"] + glyph["offset"]
+                line_height
             )
 
-        total_width = max(
-            1,
-            total_width
+        # --------------------------------------------------
+        # Native line spacing
+        # --------------------------------------------------
+        #
+        # fnt_main glyphs are generally around 13-16 pixels
+        # tall. Use the tallest line so different glyphs do
+        # not overlap.
+        # --------------------------------------------------
+
+        line_spacing = max_height
+
+        total_height = (
+            line_spacing
+            * len(line_data)
         )
 
-        # ------------------------------------------
-        # Create native-resolution text image
-        # ------------------------------------------
+        total_height = max(
+            1,
+            total_height
+        )
+
+        # --------------------------------------------------
+        # Create native-resolution image
+        # --------------------------------------------------
 
         image = Image.new(
             "RGBA",
             (
-                total_width,
-                max_height
+                max_width,
+                total_height
             ),
             (0, 0, 0, 0)
         )
 
-        cursor_x = 0
+        # --------------------------------------------------
+        # Render each line
+        # --------------------------------------------------
 
-        for char, glyph in glyphs:
+        for line_index, (
+            glyphs,
+            line_width,
+            line_height
+        ) in enumerate(line_data):
 
-            glyph_image = self.mnFont.crop(
-                (
-                    glyph["x"],
-                    glyph["y"],
-                    glyph["x"] + glyph["w"],
-                    glyph["y"] + glyph["h"]
+            cursor_x = 0
+
+            line_y = (
+                line_index
+                * line_spacing
+            )
+
+            for char, glyph in glyphs:
+
+                # ------------------------------------------
+                # Extract glyph from fnt_main.png
+                # ------------------------------------------
+
+                glyph_image = self.mnFont.crop(
+                    (
+                        glyph["x"],
+                        glyph["y"],
+                        glyph["x"] + glyph["w"],
+                        glyph["y"] + glyph["h"]
+                    )
                 )
-            )
 
-            colored_glyph = Image.new(
-                "RGBA",
-                glyph_image.size,
-                color
-            )
+                # ------------------------------------------
+                # Apply requested color
+                # ------------------------------------------
 
-            colored_glyph.putalpha(
-                glyph_image.getchannel("A")
-            )
-
-            glyph_image = colored_glyph
-
-            image.alpha_composite(
-                glyph_image,
-                (
-                    cursor_x,
-                    glyph["offset"]
+                colored_glyph = Image.new(
+                    "RGBA",
+                    glyph_image.size,
+                    (
+                        color_rgb[0],
+                        color_rgb[1],
+                        color_rgb[2],
+                        255
+                    )
                 )
-            )
 
-            cursor_x += glyph["shift"]
+                colored_glyph.putalpha(
+                    glyph_image.getchannel("A")
+                )
 
-        # ------------------------------------------
-        # Fullscreen scaling
-        # ------------------------------------------
+                # ------------------------------------------
+                # Place glyph
+                # ------------------------------------------
+
+                image.alpha_composite(
+                    colored_glyph,
+                    (
+                        cursor_x,
+                        line_y
+                        + glyph["offset"]
+                    )
+                )
+
+                # ------------------------------------------
+                # Advance cursor
+                # ------------------------------------------
+
+                cursor_x += glyph["shift"]
+
+        # --------------------------------------------------
+        # Fullscreen + independent scaling
+        # --------------------------------------------------
 
         scaled_width = max(
             1,
-            round(image.width * scale)
+            round(
+                image.width
+                * final_scale
+            )
         )
 
         scaled_height = max(
             1,
-            round(image.height * scale)
+            round(
+                image.height
+                * final_scale
+            )
         )
 
         image = image.resize(
@@ -1369,128 +1514,344 @@ class MainFont:
             Image.Resampling.NEAREST
         )
 
+        # --------------------------------------------------
+        # Tkinter PhotoImage
+        # --------------------------------------------------
+
         photo = ImageTk.PhotoImage(
             image
         )
 
-        self.cache[cache_key] = photo
+        self.cache[
+            cache_key
+        ] = photo
 
         return photo
-
     def clear_cache(self):
         self.cache.clear()
-
 
 class UISpriteSheet:
 
     def __init__(self, game):
+
         self.game = game
 
-        self.sheet = Image.open(
-            SPRITESHEET_PATH
+        # --------------------------------------------------
+        # Main font atlas
+        # --------------------------------------------------
+
+        self.mnFont = Image.open(
+            MAIN_FONT_PATH
         ).convert("RGBA")
 
         # --------------------------------------------------
-        # Native-resolution sprites
+        # Cache
+        #
+        # (text, final_scale, color) -> PhotoImage
         # --------------------------------------------------
 
-        self.sprites = {
-            "dialogue_box": self.sheet.crop(
-                (292, 19, 581, 95)
-            ),
+        self.cache = {}
 
-            "status_box": self.sheet.crop(
-                (292, 119, 363, 174)
-            ),
+    # ======================================================
+    # RENDER
+    # ======================================================
 
-            "menu_box": self.sheet.crop(
-                (292, 177, 363, 251)
-            ),
-
-            "menu_box_item": self.sheet.crop(
-                (370, 119, 543, 300)
-            ),
-            "menu_box_stat": self.sheet.crop(
-                (370, 304, 543, 513)
-            )
-        }
-
-        # --------------------------------------------------
-        # Calibrated native UI dimensions
-        # --------------------------------------------------
-
-        self.calibrated_sizes = {
-            "menu_box": (71, 74),
-            "menu_box_item": (173, 181),
-            "menu_box_stat": (173, 209)
-        }
-
-        # --------------------------------------------------
-        # Sprite cache
-        # --------------------------------------------------
-
-        self.photo_cache = {}
-
-        # --------------------------------------------------
-        # Small bitmap font
-        # --------------------------------------------------
-
-        self.small_font = SmallFont(game)
-        self.main_font = MainFont(game)
-
-    def get(self, name):
+    def render(
+        self,
+        text,
+        color="white",
+        scale_multiplier=1.0
+    ):
         """
-        Return a PhotoImage scaled to the game's
-        current fullscreen scale.
+        Render bitmap text.
+
+        Parameters
+        ----------
+        text:
+            Text to render. Supports '\\n' for multiple lines.
+
+        color:
+            Color applied to the visible pixels.
+
+        scale_multiplier:
+            Additional scale applied independently of the
+            game's normal fullscreen scale.
+
+            1.0 = normal size
+            0.75 = 75%
+            0.5 = 50%
+            2.0 = 200%
         """
 
-        scale = float(self.game.scale)
+        text = str(text)
+
+        # --------------------------------------------------
+        # Calculate final scale
+        # --------------------------------------------------
+
+        game_scale = float(
+            self.game.scale
+        )
+
+        scale_multiplier = float(
+            scale_multiplier
+        )
+
+        if scale_multiplier <= 0:
+            scale_multiplier = 1.0
+
+        final_scale = (
+            game_scale
+            * scale_multiplier
+        )
 
         scale_key = round(
-            scale,
+            final_scale,
             4
         )
 
+        # --------------------------------------------------
+        # Cache
+        # --------------------------------------------------
+
         cache_key = (
-            name,
-            scale_key
+            text,
+            scale_key,
+            color
         )
 
-        if cache_key in self.photo_cache:
-            return self.photo_cache[cache_key]
+        if cache_key in self.cache:
 
-        image = self.sprites[name]
+            return self.cache[
+                cache_key
+            ]
 
         # --------------------------------------------------
-        # Apply native-size calibration
+        # Split text into lines
         # --------------------------------------------------
 
-        if name in self.calibrated_sizes:
+        lines = text.split("\n")
 
-            native_width, native_height = (
-                self.calibrated_sizes[name]
+        if not lines:
+            lines = [""]
+
+        # --------------------------------------------------
+        # Calculate native dimensions
+        # --------------------------------------------------
+
+        line_data = []
+
+        max_width = 1
+        line_height = 0
+
+        for line in lines:
+
+            glyphs = []
+
+            total_width = 0
+            max_line_height = 1
+
+            for char in line:
+
+                # ------------------------------------------
+                # Unsupported characters are ignored.
+                # ------------------------------------------
+
+                if char not in self.GLYPHS:
+
+                    continue
+
+                glyph = self.GLYPHS[
+                    char
+                ]
+
+                glyphs.append(
+                    (
+                        char,
+                        glyph
+                    )
+                )
+
+                total_width += glyph[
+                    "shift"
+                ]
+
+                max_line_height = max(
+                    max_line_height,
+                    glyph["h"]
+                    + glyph["offset"]
+                )
+
+            total_width = max(
+                1,
+                total_width
             )
 
-            image = image.resize(
+            line_data.append(
                 (
-                    round(native_width),
-                    round(native_height)
-                ),
-                Image.Resampling.NEAREST
+                    glyphs,
+                    total_width,
+                    max_line_height
+                )
+            )
+
+            max_width = max(
+                max_width,
+                total_width
+            )
+
+            line_height = max(
+                line_height,
+                max_line_height
             )
 
         # --------------------------------------------------
-        # Apply fullscreen scaling
+        # Use the tallest line as the standard line spacing.
+        #
+        # This keeps multiline text aligned consistently
+        # even when individual lines contain different
+        # glyphs.
+        # --------------------------------------------------
+
+        line_height = max(
+            1,
+            line_height
+        )
+
+        total_height = (
+            line_height
+            * len(lines)
+        )
+
+        # --------------------------------------------------
+        # Create native-resolution image
+        # --------------------------------------------------
+
+        image = Image.new(
+            "RGBA",
+            (
+                max_width,
+                total_height
+            ),
+            (
+                0,
+                0,
+                0,
+                0
+            )
+        )
+
+        # --------------------------------------------------
+        # Convert color
+        # --------------------------------------------------
+
+        if isinstance(
+            color,
+            str
+        ):
+
+            color_rgb = ImageColor.getrgb(
+                color
+            )
+
+        else:
+
+            color_rgb = color
+
+        # --------------------------------------------------
+        # Render each line
+        # --------------------------------------------------
+
+        for line_index, (
+            glyphs,
+            line_width,
+            line_max_height
+        ) in enumerate(line_data):
+
+            cursor_x = 0
+
+            cursor_y = (
+                line_index
+                * line_height
+            )
+
+            for char, glyph in glyphs:
+
+                # ------------------------------------------
+                # Extract glyph from atlas
+                # ------------------------------------------
+
+                glyph_image = self.mnFont.crop(
+                    (
+                        glyph["x"],
+                        glyph["y"],
+                        glyph["x"]
+                        + glyph["w"],
+                        glyph["y"]
+                        + glyph["h"]
+                    )
+                )
+
+                # ------------------------------------------
+                # Apply color while preserving alpha
+                # ------------------------------------------
+
+                colored_glyph = Image.new(
+                    "RGBA",
+                    glyph_image.size,
+                    (
+                        color_rgb[0],
+                        color_rgb[1],
+                        color_rgb[2],
+                        255
+                    )
+                )
+
+                colored_glyph.putalpha(
+                    glyph_image.getchannel(
+                        "A"
+                    )
+                )
+
+                # ------------------------------------------
+                # Composite glyph
+                # ------------------------------------------
+
+                image.alpha_composite(
+                    colored_glyph,
+                    (
+                        cursor_x,
+                        cursor_y
+                        + glyph["offset"]
+                    )
+                )
+
+                # ------------------------------------------
+                # Advance according to the font's spacing.
+                # ------------------------------------------
+
+                cursor_x += glyph[
+                    "shift"
+                ]
+
+        # --------------------------------------------------
+        # Apply fullscreen + independent scaling
         # --------------------------------------------------
 
         scaled_width = max(
             1,
-            round(image.width * scale)
+            round(
+                image.width
+                * final_scale
+            )
         )
 
         scaled_height = max(
             1,
-            round(image.height * scale)
+            round(
+                image.height
+                * final_scale
+            )
         )
 
         image = image.resize(
@@ -1501,17 +1862,28 @@ class UISpriteSheet:
             Image.Resampling.NEAREST
         )
 
+        # --------------------------------------------------
+        # Convert to Tkinter PhotoImage
+        # --------------------------------------------------
+
         photo = ImageTk.PhotoImage(
             image
         )
 
-        self.photo_cache[cache_key] = photo
+        # --------------------------------------------------
+        # Cache
+        # --------------------------------------------------
+
+        self.cache[
+            cache_key
+        ] = photo
 
         return photo
 
+    # ======================================================
+    # CACHE
+    # ======================================================
+
     def clear_cache(self):
-        """Clear all cached scaled sprites."""
 
-        self.photo_cache.clear()
-
-        self.small_font.clear_cache()
+        self.cache.clear()

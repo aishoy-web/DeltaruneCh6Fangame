@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from rooms import ROOMS
 from PIL import Image, ImageTk
+from chapterselect import ChapterSelect
 from ui_sprites import UISpriteSheet
 from hud import HUD
 from player import Player
@@ -90,18 +91,14 @@ class Game:
         self.LW_inventory = [
             "Ball of Junk",
             "Glass",
-            "BlackShard",
-            "Elite Ball Knowledge",
-            "Bread",
-            "How to Draw Dragons",
-            "Seeds",
-            "Anime Figurine"
+            "BlackShard"
         ]
         
         # Create basic game objects
         self.load_room("mainMenu")
         self.player = Player(self)
         self.menu = Menu(self)
+        self.chapter_select = ChapterSelect(self)
         
         # Draw everything once finished initializing, so that the game starts with a fully rendered screen
         self.render_static()
@@ -113,6 +110,11 @@ class Game:
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
             self.dialogue_data = json.load(f)
         self.type_text()'''
+    def launch_chapter(self, chapter):
+        if chapter == 6:
+            print("Initializing Chapter 6")
+        # Temporary, add the actual chapter startup once chapter select is working
+            self.state = "playing"
     def start_dialogue(self, dialogue=None, lock_player=True):
         self.dialogue_active = True
         self.dialogue_blocks_movement = lock_player
@@ -516,6 +518,11 @@ class Game:
         self.root.bind("<z>", self.handle_z)
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
+        key = event.keysym
+        if key == "F2":
+            self.state = "chapter_select"
+            self.chapter_select.open()
+            return
         if self.transitioning:
             return
         key = event.keysym
@@ -523,6 +530,9 @@ class Game:
         if key in self.keys_pressed:
             return
         self.keys_pressed.add(key)
+        if self.state == "chapter_select":
+            self.chapter_select.handle_input(key)
+            return
         # C = menu open / close
         if key == "c":
             self.toggle_menu()

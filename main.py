@@ -1,8 +1,11 @@
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-from game import Game
+
+from chapterselect import ChapterSelect
+
 def main():
-    game = Game()
-    game.run()
-if __name__ == '__main__':
+    chapter_select = ChapterSelect()
+    chapter_select.run()
+
+if __name__ == "__main__":
     main()
