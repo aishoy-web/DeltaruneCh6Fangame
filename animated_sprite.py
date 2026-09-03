@@ -42,7 +42,9 @@ class AnimatedSprite:
                             pixels[x,y] = (0,0,0,0)
                 frames.append(frame)
             self.animations[name] = frames
-        self.current_animation = "down"
+        #changed to instead take the first animation in the dict, which allows it to be more reusable
+        #hurrah for reuseable code! (and also for not having to make a new class for every single sprite)
+        self.current_animation = next(iter(self.animations))
         self.current_frame = 0
         self.timer = 0
         self.rest_frames = (0,2)

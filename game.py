@@ -1,8 +1,8 @@
 from fileinput import filename
 import tkinter as tk
-import customtkinter
 import time
 from pathlib import Path
+from animated_sprite import AnimatedSprite
 from rooms import ROOMS
 from PIL import Image, ImageTk
 from chapterselect import ChapterSelect
@@ -18,6 +18,7 @@ import os #file manip
 
 
 BASE_DIR = Path(__file__).resolve().parent
+uiSpritesheetPath = BASE_DIR/"sprites"/"ui"/"menu+HUD_spritesheet.png" #unbelievably cursed having it here, but if we need to reuse it for anything else we can easily rename the var  
 
 ''' 
     TODO LIST:
@@ -29,6 +30,8 @@ BASE_DIR = Path(__file__).resolve().parent
         -closing dialogue after it finishes also seems to be bugged, but it might be more related to progressing dialogue
             rather than closing it.
         -some movement animations can still play when dialogue is active.
+        -pressing escape needs to close the game, but will we need to add the config menu in the dark world to change fullscreen to compensate - escape should be done now, but needs testing
+        -the config menu needs to be added to the dark world.
 '''
 
 
@@ -90,6 +93,9 @@ class Game:
         self.was_moving = False
         self.keys_pressed = set()
         self.direction_keys = []
+        self.escapeKeyHoldDuration = 2.0 #for closing the game by holding it down
+        self.escapePressTime = None
+        self.isEscapeHeld = False
         
         #other init
         self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
@@ -100,6 +106,17 @@ class Game:
         self.fade_start_time = None
         self.fade_mode = None
         self.audio = AudioManager()
+        self.quitAnimated = AnimatedSprite( #escape text init
+                    uiSpritesheetPath,
+                    cell_width=87,
+                    cell_height=10,
+                    sprite_width=87,
+                    sprite_height=10,
+                    sheet_offset_x=6,
+                    sheet_offset_y = 430,
+                    animations={"quit": (0, 0, 4)},
+                    animation_speed = 2.0
+                ) 
         
         #file select
         self.file_menu = FileMenu(self)
@@ -163,7 +180,7 @@ class Game:
         self.root.attributes("-fullscreen", True)
         
         self.root.bind("<F11>",self.toggle_fullscreen)
-        self.root.bind("<Escape>",self.exit_fullscreen)
+        self.root.bind("<Escape>",self.quit_game)
         self.root.bind("<Configure>", self.window_resized)
     # f11 toggles the fullscreen
     def toggle_fullscreen(self, event = None):
@@ -175,6 +192,35 @@ class Game:
         self.fullscreen = False
         self.root.attributes("-fullscreen", False)
         self.on_resize()
+    #quit the game by holding down the escape key for a few seconds, to prevent accidental quitting
+    def quit_game(self, event = None):
+        if self.isEscapeHeld:
+            return
+            
+        self.isEscapeHeld = True
+        self.escapePressTime = time.time()
+        
+        # Start checking the hold condition
+        self.quit_game_hold()
+    def quit_game_hold(self, event = None):
+        if not self.isEscapeHeld:
+            return
+
+        elapsed = time.time() - self.escapePressTime
+        
+        if elapsed >= self.hold_duration:
+            print("Condition met. Closing application.")
+            self.root.destroy()
+        else:
+            # Re-check every 100 milliseconds
+            self.root.after(100, self.quit_game_hold)
+        
+        #add a label to the screen that says "Quitting..." when the escape key is held down
+    def quit_game_release(self, event = None):
+        self.isEscapeHeld = False
+        self.escapePressTime = None
+        
+        #remove quitting button
     def window_resized(self, event):
         if event.widget != self.root:
             return
@@ -298,17 +344,41 @@ class Game:
         self.dialogue_box.render_static()
     def render_dynamic(self):
         self.render_background_dynamic()
+        
+        #special renders, like the player, the menu, dialog, etc
         if hasattr(self, "player"):
             self.player.render()
+        
+        if self.isEscapeHeld: #if holding the button then display it
+            self.quitAnimated.update()
+            self.renderQuit()
+            
+        
         if self.menu.visible:
             self.menu.render_dynamic()
             self.canvas.tag_raise("menu")
+            
         if self.dialogue_box.visible:
             self.dialogue_box.layout_widgets()
+            
         self.render_debug_dynamic()
         self.update_debug_hud()
         self.canvas.tag_raise(self.debug_text)
         self.render_fade()
+    def renderQuit(self):
+        #get the frame, resize it, and then render it to the canvas
+        frame = self.animation.get_frame()
+        scaled = frame.resize((int(frame.width * self.game.scale),int(frame.height * self.game.scale)),Image.Resampling.NEAREST)
+        self.photo = ImageTk.PhotoImage(scaled)
+        canvas_x, canvas_y = self.game.game_to_screen(self.x, self.y)
+        
+        self.game.canvas.coords(
+            self.canvas_sprite,
+            canvas_x,
+            canvas_y)
+        self.game.canvas.itemconfig(
+            self.canvas_sprite,
+            image=self.photo) 
     def render_fade(self):
         if self.fade_alpha <= 0:
             self.canvas.itemconfigure(
@@ -732,7 +802,7 @@ class Game:
     def change_language(self, language):
         # Change the language of the game
         # TODO
-        pass            
+        pass 
     def end_program(self):
         # End the program and close the game
         self.root.destroy()
