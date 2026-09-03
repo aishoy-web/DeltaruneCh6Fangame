@@ -1831,14 +1831,14 @@ class ChapterSelect:
 
             if self.confirm_index == 0:
 
-                # PLAY
+                # PLAY (this chapter)
                 self.launch_chapter(
                     self.selected_chapter
                 )
 
             elif self.confirm_index == 1:
 
-                # DO NOT
+                # DO NOT (select this chapter)
                 self.audio.play_sfx(SND_MENUSELECT)
                 self.selection = "chapters"
 
