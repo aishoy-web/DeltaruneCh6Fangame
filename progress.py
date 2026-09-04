@@ -500,3 +500,115 @@ class ProgressTracker:
         else:
 
             completed.touch()
+    def highest_shadow_crystal_chapter(
+        self,
+        maximum_chapter=5
+    ):
+
+        highest = 0
+
+        for chapter in range(
+            1,
+            maximum_chapter + 1
+        ):
+
+            if self.fought_secret_boss_any_slot(
+                chapter
+            ):
+
+                highest = chapter
+
+        return highest
+    def shadow_crystal_grid(
+        self,
+        maximum_chapter=6
+    ):
+
+        highest_chapter = 0
+
+        # Equivalent to obj_ui_grid_Create_0.
+        for chapter in range(
+            1,
+            maximum_chapter + 1
+        ):
+
+            if (
+                self.fought_secret_boss_any_slot(
+                    chapter
+                )
+                and chapter > highest_chapter
+            ):
+                highest_chapter = chapter
+
+        grid = []
+
+        for chapter in range(
+            1,
+            highest_chapter + 1
+        ):
+
+            grid.append(
+                {
+                    "chapter": chapter,
+                    "results":
+                        self.shadow_crystal_results(
+                            chapter
+                        )
+                }
+            )
+
+        return grid
+    def get_shadow_crystal_result(
+        self,
+        chapter,
+        slot
+    ):
+        """
+        Returns the URA result used by obj_ui_grid_line.
+
+        This intentionally preserves the Chapter 3 special
+        case from the original game:
+
+            Chapter 3, URA result 2 -> display as 0
+        """
+
+        result = self.get_ura_value(
+            chapter,
+            slot
+        )
+
+        if (
+            chapter == 3
+            and result == 2
+        ):
+            result = 0
+
+        return result
+    def shadow_crystal_obtained(
+        self,
+        chapter,
+        slot
+    ):
+        """
+        Equivalent to the frame-selection logic in
+        obj_ui_grid_line_Draw_0.
+        """
+
+        return (
+            self.get_shadow_crystal_result(
+                chapter,
+                slot
+            ) > 0
+        )
+    def shadow_crystal_results(
+        self,
+        chapter
+    ):
+
+        return [
+            self.get_shadow_crystal_result(
+                chapter,
+                slot
+            )
+            for slot in range(3)
+        ]

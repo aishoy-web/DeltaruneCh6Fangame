@@ -76,6 +76,14 @@ CONFIRM_PLAY_X = 140
 CONFIRM_DONOT_X = 240
 CONFIRM_Y_OFFSET = 8.5
 
+CHAPTER_STAR_X = 90
+CHAPTER_STAR_Y_OFFSET = 13
+CHAPTER_STAR_SPACING = 6
+
+SHADOW_GRID_X = 292
+SHADOW_GRID_Y = 218
+SHADOW_GRID_SPACING = 10
+
 # ------------------------------------------------------
 # Colors
 # ------------------------------------------------------
@@ -141,7 +149,7 @@ ENTRANCE_ALPHA_LERP = 0.1
 ENTRANCE_Y_LERP = 0.22
 
 # Approximately one GameMaker Step at 60 FPS.
-ENTRANCE_FRAME_MS = 8
+ENTRANCE_FRAME_MS = 4
 
 # Python's lerp approaches 1 without naturally landing
 # there, so snap to the final state once extremely close.
@@ -302,39 +310,63 @@ class ChapterSelect:
             self.star_image = None
 
     def refresh_progress(self):
-        for chapter in self.chapters:
 
-            number = chapter["number"]
+        # for chapter in self.chapters:
 
-            chapter["completed"] = (
-                self.progress.completed_chapter_any_slot(
-                    number
-                )
+        #     number = chapter["number"]
+
+        #     completion_slots = (
+        #         self.progress.completion_slots(
+        #             number
+        #         )
+        #     )
+
+        #     chapter[
+        #         "completion_slots"
+        #     ] = completion_slots
+
+        #     chapter[
+        #         "completed"
+        #     ] = any(
+        #         state > 0
+        #         for state in completion_slots
+        #     )
+
+        #     chapter[
+        #         "secret_boss_fought"
+        #     ] = (
+        #         self.progress
+        #         .fought_secret_boss_any_slot(
+        #             number
+        #         )
+        #     )
+        self.shadow_crystal_grid = (
+            self.progress.shadow_crystal_grid(
+                maximum_chapter=6
             )
+        )
+    def shadow_grid_x(
+        self,
+        index,
+        count
+    ):
 
-            chapter["completion_slots"] = (
-                self.progress.completion_slots(
-                    number
-                )
+        max_width = (
+            SHADOW_GRID_SPACING
+            * count
+        )
+
+        x_offset = (
+            max_width / 2
+        )
+
+        return (
+            SHADOW_GRID_X
+            + (
+                index
+                * SHADOW_GRID_SPACING
             )
-
-            chapter["secret_boss_fought"] = (
-                self.progress.fought_secret_boss_any_slot(
-                    number
-                )
-            )
-
-        self.shadow_crystal_chapters = [
-            chapter["number"]
-            for chapter in self.chapters
-            if chapter.get(
-                "secret_boss_fought",
-                False
-            )
-        ]
-
-        self.shadow_crystal_count = len(
-            self.shadow_crystal_chapters
+            - x_offset
         )
 
 
