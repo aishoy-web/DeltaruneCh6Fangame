@@ -76,13 +76,15 @@ CONFIRM_PLAY_X = 140
 CONFIRM_DONOT_X = 240
 CONFIRM_Y_OFFSET = 8.5
 
-CHAPTER_STAR_X = 90
-CHAPTER_STAR_Y_OFFSET = 13
+CHAPTER_STAR_X = 92.5
+CHAPTER_STAR_Y_OFFSET = 2
 CHAPTER_STAR_SPACING = 6
 
-SHADOW_GRID_X = 292
-SHADOW_GRID_Y = 218
+SHADOW_GRID_X = 294.5
+SHADOW_GRID_Y = 220.5
 SHADOW_GRID_SPACING = 10
+SHADOW_GRID_SLOT_SPACING = 5
+SHADOW_GRID_COLUMN_SPACING = 10
 
 # ------------------------------------------------------
 # Colors
@@ -116,13 +118,20 @@ STAR_PATH = (
     BASE_DIR
     / "sprites"
     / "chapter_select"
-    / "spr_ui_star.png"
+    / "spr_ui_star"
 )
 
 AUDIO_DRONE = (
     BASE_DIR
     /"mus"
     /"AUDIO_DRONE"
+)
+
+DOT_PATH = (
+    BASE_DIR
+    / "sprites"
+    / "chapter_select"
+    / "spr_ui_dot"
 )
 
 SFX_DIR = BASE_DIR / "sfx"
@@ -164,7 +173,6 @@ class ChapterSelect:
         icon = ImageTk.PhotoImage(Image.open(icon_path))
         self.root.iconphoto(False, icon)
         self.icon = icon
-
         self.canvas = tk.Canvas(
             self.root,
             width=320,
@@ -173,7 +181,7 @@ class ChapterSelect:
             highlightthickness=0
         )
         self.canvas.pack(fill="both", expand=True)
-
+        self.shadow_grid_photos = []
         self.scale = 1.0
         self.offset_x = 0
         self.offset_y = 0
@@ -298,53 +306,310 @@ class ChapterSelect:
         self.chapter_icon_sheet = Image.open(
             CHAPTER_ICON_SHEET
         ).convert("RGBA")
+        self.dot_frames = []
+
+        for i in range(2):
+
+            dot_path = (
+                DOT_PATH
+                / f"spr_ui_dot_{i}.png"
+            )
+
+            self.dot_frames.append(
+                Image.open(
+                    dot_path
+                ).convert("RGBA")
+            )
         self.chapter_icons = self.extract_chapter_icons()
         self.heart_image = Image.open(
             HEART_PATH
         ).convert("RGBA")
-        if STAR_PATH.exists():
-            self.star_image = Image.open(
+        self.star_frames = []
+
+        for i in range(3):
+
+            star_path = (
                 STAR_PATH
-            ).convert("RGBA")
-        else:
-            self.star_image = None
+                / f"spr_ui_star_{i}.png"
+            )
+
+            if star_path.exists():
+
+                frame = Image.open(
+                    star_path
+                ).convert("RGBA")
+
+                self.star_frames.append(
+                    frame
+                )
 
     def refresh_progress(self):
+        for chapter in self.chapters:
+            number = chapter["number"]
+            # ----------------------------------------------
+            # Chapter completion
+            # ----------------------------------------------
+            completion_slots = (
+                self.progress.completion_slots(
+                    number
+                )
+            )
+            chapter[
+                "completion_slots"
+            ] = completion_slots
+            chapter[
+                "completed"
+            ] = any(
+                state > 0
+                for state in completion_slots
+            )
+            # ----------------------------------------------
+            # Secret boss / URA
+            # ----------------------------------------------
+            chapter[
+                "ura_results"
+            ] = [
+                self.progress.get_ura_value(
+                    number,
+                    slot
+                )
+                for slot in range(3)
+            ]
 
-        # for chapter in self.chapters:
+        # ----------------------------------------------
+        # Shadow Crystal grid
+        # ----------------------------------------------
 
-        #     number = chapter["number"]
-
-        #     completion_slots = (
-        #         self.progress.completion_slots(
-        #             number
-        #         )
-        #     )
-
-        #     chapter[
-        #         "completion_slots"
-        #     ] = completion_slots
-
-        #     chapter[
-        #         "completed"
-        #     ] = any(
-        #         state > 0
-        #         for state in completion_slots
-        #     )
-
-        #     chapter[
-        #         "secret_boss_fought"
-        #     ] = (
-        #         self.progress
-        #         .fought_secret_boss_any_slot(
-        #             number
-        #         )
-        #     )
         self.shadow_crystal_grid = (
             self.progress.shadow_crystal_grid(
                 maximum_chapter=6
             )
         )
+
+        # ----------------------------------------------
+        # Temporary diagnostics
+        # ----------------------------------------------
+
+        # print("\n--- CHAPTER PROGRESS ---")
+
+        # print(
+        #     "Official save directory:",
+        #     self.progress.official_dir
+        # )
+
+        # for chapter in self.chapters:
+
+        #     print(
+        #         f"Chapter {chapter['number']}:",
+        #         "completion =",
+        #         chapter["completion_slots"],
+        #         "URA =",
+        #         chapter["ura_results"]
+        #     )
+
+        # print(
+        #     "Shadow grid:",
+        #     self.shadow_crystal_grid
+        # )
+
+        # print("------------------------\n")
+        # self.progress.debug_official_ini()
+
+    def render_shadow_crystals(self):
+
+        # IMPORTANT:
+        # Keep the old PhotoImage references alive until
+        # every canvas item has either been hidden or assigned
+        # a new image.
+        old_photos = self.shadow_grid_photos
+
+        new_photos = []
+
+        # --------------------------------------------------
+        # Hide existing grid items first while their old
+        # PhotoImages still exist.
+        # --------------------------------------------------
+
+        for column in self.shadow_grid_items:
+
+            for item in column:
+
+                self.canvas.itemconfigure(
+                    item,
+                    state="hidden"
+                )
+
+        grid = self.shadow_crystal_grid
+
+        chapter_count = len(grid)
+
+        if chapter_count == 0:
+
+            self.shadow_grid_photos = []
+            return
+
+        # --------------------------------------------------
+        # Original GameMaker:
+        #
+        # max_width = 20 * highest_chapter_obtained;
+        # x_offset = max_width / 2;
+        #
+        # Half-resolution equivalent:
+        # --------------------------------------------------
+
+        max_width = (
+            SHADOW_GRID_COLUMN_SPACING
+            * chapter_count
+        )
+
+        x_offset = (
+            max_width / 2
+        )
+
+        for column_index, chapter_data in enumerate(
+            grid
+        ):
+
+            results = chapter_data[
+                "results"
+            ]
+
+            x = (
+                SHADOW_GRID_X
+                + (
+                    column_index
+                    * SHADOW_GRID_COLUMN_SPACING
+                )
+                - x_offset
+            )
+
+            for slot_index, result in enumerate(
+                results
+            ):
+
+                frame_index = (
+                    1
+                    if result > 0
+                    else 0
+                )
+
+                dot = self.dot_frames[
+                    frame_index
+                ].copy()
+
+                # Participate in the entrance animation.
+                dot = self.apply_entrance_alpha(
+                    dot
+                )
+
+                dot_scale = (
+                    self.scale
+                    * 0.5
+                )
+
+                dot = dot.resize(
+                    (
+                        max(
+                            1,
+                            round(
+                                dot.width
+                                * dot_scale
+                            )
+                        ),
+                        max(
+                            1,
+                            round(
+                                dot.height
+                                * dot_scale
+                            )
+                        )
+                    ),
+                    Image.Resampling.NEAREST
+                )
+
+                photo = ImageTk.PhotoImage(
+                    dot
+                )
+
+                # Keep the new image alive.
+                new_photos.append(
+                    photo
+                )
+
+                y = (
+                    SHADOW_GRID_Y
+                    + self.entrance_y_offset
+                    + (
+                        slot_index
+                        * SHADOW_GRID_SLOT_SPACING
+                    )
+                )
+
+                screen_x, screen_y = (
+                    self.ui_to_screen(
+                        x,
+                        y
+                    )
+                )
+
+                item = (
+                    self.shadow_grid_items[
+                        column_index
+                    ][
+                        slot_index
+                    ]
+                )
+
+                self.canvas.coords(
+                    item,
+                    screen_x,
+                    screen_y
+                )
+
+                self.canvas.itemconfigure(
+                    item,
+                    image=photo,
+                    state="normal"
+                )
+
+        # Only NOW may the old PhotoImages be released.
+        self.shadow_grid_photos = new_photos
+    def extract_dot_frames(self):
+        """
+        spr_ui_dot has two subimages:
+
+            frame 0 = unlit
+            frame 1 = obtained
+        """
+
+        frame_width = (
+            self.dot_sheet.width // 2
+        )
+
+        frame_height = (
+            self.dot_sheet.height
+        )
+
+        frames = []
+
+        for i in range(2):
+
+            left = (
+                i * frame_width
+            )
+
+            frame = self.dot_sheet.crop(
+                (
+                    left,
+                    0,
+                    left + frame_width,
+                    frame_height
+                )
+            )
+
+            frames.append(frame)
+
+        return frames
     def shadow_grid_x(
         self,
         index,
@@ -580,15 +845,16 @@ class ChapterSelect:
 
         for chapter in self.chapters:
 
-            # Up to two completion stars.
             stars = []
 
-            for _ in range(2):
+            # Three save slots = three star states.
+            for _ in range(3):
 
                 item = self.canvas.create_image(
                     0,
                     0,
                     anchor="center",
+                    state="hidden",
                     tags=("chapter_select",)
                 )
 
@@ -677,6 +943,35 @@ class ChapterSelect:
                 self.confirm_cursor,
             ]
         )
+        # --------------------------------------------------
+        # Shadow Crystal grid
+        # --------------------------------------------------
+
+        self.shadow_grid_items = []
+
+        for chapter_index in range(6):
+
+            column = []
+
+            for slot_index in range(3):
+
+                item = self.canvas.create_image(
+                    0,
+                    0,
+                    anchor="center",
+                    state="hidden",
+                    tags=("chapter_select",)
+                )
+
+                column.append(item)
+
+                self.canvas_items.append(
+                    item
+                )
+
+            self.shadow_grid_items.append(
+                column
+            )
 
     def fade_color(self, color):
         """
@@ -799,7 +1094,9 @@ class ChapterSelect:
         self.update_assets()
 
         self.render_chapters()
+        self.render_stars()
         self.render_footer()
+        self.render_shadow_crystals()
 
         if self.selection == "confirm":
 
@@ -1065,27 +1362,25 @@ class ChapterSelect:
             fill=self.fade_color(DARK_GRAY)
             )
 
-            if i < len(self.chapters) - 1:
+            bar_y = y + BAR_Y_OFFSET
 
-                bar_y = y + BAR_Y_OFFSET
+            x1, y1 = self.ui_to_screen(
+                BAR_X,
+                bar_y
+            )
 
-                x1, y1 = self.ui_to_screen(
-                    BAR_X,
-                    bar_y
-                )
+            x2, y2 = self.ui_to_screen(
+                BAR_X + BAR_WIDTH,
+                bar_y + BAR_HEIGHT
+            )
 
-                x2, y2 = self.ui_to_screen(
-                    BAR_X + BAR_WIDTH,
-                    bar_y + BAR_HEIGHT
-                )
-
-                self.canvas.coords(
-                    self.chapter_bar_items[i],
-                    x1,
-                    y1,
-                    x2,
-                    y2
-                )
+            self.canvas.coords(
+                self.chapter_bar_items[i],
+                x1,
+                y1,
+                x2,
+                y2
+            )
 
     # ======================================================
     # CHAPTER CONFIRMATION
@@ -1379,49 +1674,108 @@ class ChapterSelect:
 
     def render_stars(self):
 
-        """
-        Completion stars will eventually be populated from
-        the Chapter completion data.
-
-        For now, completed_chapters controls them.
-        """
-
-        if self.star_image is None:
+        if not self.star_frames:
             return
 
-        for i, chapter in enumerate(self.chapters):
+        old_photos = self.star_photos
+        new_photos = []
 
-            completed = chapter.get(
-                "completed",
-                False
+        for chapter_index, chapter in enumerate(
+            self.chapters
+        ):
+
+            states = chapter.get(
+                "completion_slots",
+                [0, 0, 0]
             )
 
-            for star_index, item in enumerate(
-                self.star_items[i]
+            for slot_index, item in enumerate(
+                self.star_items[chapter_index]
             ):
 
-                if not completed or star_index > 0:
+                state = states[
+                    slot_index
+                ]
 
-                    self.canvas.itemconfigure(
-                        item,
-                        state="hidden"
-                    )
+                # Make sure the state maps to a real frame.
+                if not (
+                    0 <= state
+                    < len(self.star_frames)
+                ):
 
-                    continue
+                    state = 0
 
-                photo = ImageTk.PhotoImage(
-                    self.star_image
+                star = (
+                    self.star_frames[
+                        state
+                    ].copy()
                 )
 
-                x, y = self.ui_to_screen(
-                    STAR_X,
-                    self.chapter_y(i)
+                # Same entrance fade as obj_ui_chapter.
+                star = self.apply_entrance_alpha(
+                    star
+                )
+
+                # Original sprite is from the 640x480 UI,
+                # so halve its logical size for 320x240.
+                star_scale = (
+                    self.scale
+                    * 0.5
+                )
+
+                star = star.resize(
+                    (
+                        max(
+                            1,
+                            round(
+                                star.width
+                                * star_scale
+                            )
+                        ),
+                        max(
+                            1,
+                            round(
+                                star.height
+                                * star_scale
+                            )
+                        )
+                    ),
+                    Image.Resampling.NEAREST
+                )
+
+                photo = ImageTk.PhotoImage(
+                    star
+                )
+
+                new_photos.append(
+                    photo
+                )
+
+                x = CHAPTER_STAR_X
+
+                y = (
+                    self.chapter_y(
+                        chapter_index
+                    )
+                    + self.entrance_y_offset
+                    + CHAPTER_STAR_Y_OFFSET
+                    + (
+                        slot_index
+                        * CHAPTER_STAR_SPACING
+                    )
+                )
+
+                screen_x, screen_y = (
+                    self.ui_to_screen(
+                        x,
+                        y
+                    )
                 )
 
                 self.canvas.coords(
                     item,
-                    x,
-                    y
+                    screen_x,
+                    screen_y
                 )
 
                 self.canvas.itemconfigure(
@@ -1429,6 +1783,8 @@ class ChapterSelect:
                     image=photo,
                     state="normal"
                 )
+
+        self.star_photos = new_photos
 
     # ======================================================
     # FOOTER
