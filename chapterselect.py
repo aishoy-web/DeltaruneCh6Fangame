@@ -193,6 +193,35 @@ ENTRANCE_FRAME_MS = 4
 # there, so snap to the final state once extremely close.
 ENTRANCE_ALPHA_THRESHOLD = 0.999
 
+# ------------------------------------------------------
+# Startup completion prompt
+#
+# Translation of obj_screen_start / obj_ui_choice.
+# Original launcher coordinates are 640x480, so all
+# positions below are their half-resolution equivalents.
+# ------------------------------------------------------
+
+STARTUP_PROMPT_X = UI_WIDTH / 2
+STARTUP_PROMPT_Y = 110
+
+STARTUP_CHOICE_X = UI_WIDTH / 2
+STARTUP_CHOICE_START_Y = 130
+STARTUP_CHOICE_SPACING = 20
+
+STARTUP_HEART_GAP = 15
+STARTUP_HEART_Y_OFFSET = 8
+
+STARTUP_VERSION_X = 8
+STARTUP_VERSION_Y = 225
+STARTUP_VERSION_SCALE = 0.5
+
+STARTUP_START_Y_OFFSET = -20.0
+STARTUP_ALPHA_LERP = 0.06
+STARTUP_Y_LERP = 0.14
+STARTUP_INPUT_DELAY_STEPS = 6
+STARTUP_FRAME_MS = 33
+STARTUP_ALPHA_THRESHOLD = 0.999
+
 class ChapterSelect:
     def __init__(self):
         self.root = tk.Tk()
@@ -261,6 +290,25 @@ class ChapterSelect:
         self.entrance_y_offset = ENTRANCE_START_Y_OFFSET
         self.entrance_job = None
 
+        # ==================================================
+        # Startup completion prompt
+        # ==================================================
+
+        self.startup_prompt_active = False
+        self.startup_completed_chapter = 0
+        self.startup_choice_index = 0
+        self.startup_alpha = 0.0
+        self.startup_y_offset = STARTUP_START_Y_OFFSET
+        self.startup_timer = 0
+        self.startup_input_enabled = False
+        self.startup_job = None
+
+        self.startup_prompt_photo = None
+        self.startup_choice_photos = []
+        self.startup_heart_photo = None
+        self.startup_version_photo = None
+        self.startup_items = []
+
         self.keys_pressed = set()
         self.selected_chapter = None
 
@@ -278,6 +326,7 @@ class ChapterSelect:
         self.load_assets()
         self.create_chapters()
         self.refresh_progress()
+        self.determine_startup_prompt()
 
         # ==================================================
         # Canvas
@@ -334,18 +383,22 @@ class ChapterSelect:
 
     def run(self):
 
-        self.audio.play_music("AUDIO_DRONE.ogg")
+        if self.startup_prompt_active:
 
-        # First frame:
-        # all animated elements are 20 logical pixels above
-        # their normal positions and fully transparent.
-        self.render()
+            # obj_CHAPTER_SELECT stops the drone while
+            # obj_screen_start is visible.
+            self.audio.stop_music()
 
-        # Start the GameMaker-style fade/slide animation.
-        self.entrance_job = self.root.after(
-            ENTRANCE_FRAME_MS,
-            self.update_entrance
-        )
+            self.render()
+
+            self.startup_job = self.root.after(
+                STARTUP_FRAME_MS,
+                self.update_startup_prompt
+            )
+
+        else:
+
+            self.start_normal_chapter_select()
 
         self.root.mainloop()
 
@@ -435,6 +488,74 @@ class ChapterSelect:
                 maximum_chapter=6
             )
         )
+
+    def determine_startup_prompt(self):
+        """
+        Reproduce the completed-chapter startup decision used by
+        obj_CHAPTER_SELECT for the part of the launcher we currently
+        support.
+
+        Show "Chapter X was completed." only when:
+
+            * at least one chapter is completed,
+            * there is a playable next chapter, and
+            * there is not a newer unfinished chapter in progress.
+
+        The last condition mirrors the original launcher's preference
+        for its Continue prompt over the completed-chapter prompt.
+        Since the Continue screen is not implemented here yet, a newer
+        in-progress chapter falls through to the normal Chapter Select.
+        """
+
+        highest_completed = 0
+        highest_in_progress = 0
+
+        for chapter in range(
+            1,
+            self.available_chapters + 1
+        ):
+
+            completed = (
+                self.progress.completed_chapter_any_slot(
+                    chapter
+                )
+            )
+
+            if completed:
+                highest_completed = chapter
+
+            if (
+                self.progress.chapter_save_file_exists(
+                    chapter
+                )
+                and not completed
+            ):
+                highest_in_progress = chapter
+
+        self.startup_completed_chapter = (
+            highest_completed
+        )
+
+        self.startup_prompt_active = (
+            highest_completed > 0
+            and highest_completed < self.available_chapters
+            and highest_in_progress <= highest_completed
+        )
+
+        if self.startup_prompt_active:
+
+            self.selection = "startup"
+            self.startup_choice_index = 0
+            self.startup_alpha = 0.0
+            self.startup_y_offset = (
+                STARTUP_START_Y_OFFSET
+            )
+            self.startup_timer = 0
+            self.startup_input_enabled = False
+
+            # The normal Chapter Select entrance does not begin
+            # until the player chooses "Chapter Select".
+            self.entrance_active = False
 
     def render_shadow_crystals(self):
 
@@ -994,14 +1115,66 @@ class ChapterSelect:
                 column
             )
 
-    def fade_color(self, color):
-        """
-        Simulate GameMaker draw alpha against the Chapter
-        Select's black background.
+        # --------------------------------------------------
+        # Startup completion prompt
+        # --------------------------------------------------
 
-        MainFont renders a fully opaque image, so fading its
-        RGB values toward black produces the same visible result
-        on this particular screen.
+        self.startup_prompt_text_item = (
+            self.canvas.create_image(
+                0,
+                0,
+                anchor="n",
+                state="hidden",
+                tags=("startup_prompt",)
+            )
+        )
+
+        self.startup_choice_items = []
+
+        for _ in range(2):
+
+            item = self.canvas.create_image(
+                0,
+                0,
+                anchor="n",
+                state="hidden",
+                tags=("startup_prompt",)
+            )
+
+            self.startup_choice_items.append(
+                item
+            )
+
+        self.startup_cursor_item = (
+            self.canvas.create_image(
+                0,
+                0,
+                anchor="center",
+                state="hidden",
+                tags=("startup_prompt",)
+            )
+        )
+
+        self.startup_version_item = (
+            self.canvas.create_image(
+                0,
+                0,
+                anchor="nw",
+                state="hidden",
+                tags=("startup_prompt",)
+            )
+        )
+
+        self.startup_items = [
+            self.startup_prompt_text_item,
+            *self.startup_choice_items,
+            self.startup_cursor_item,
+            self.startup_version_item,
+        ]
+
+    def color_with_alpha(self, color, alpha):
+        """
+        Simulate draw alpha against this screen's black background.
         """
 
         color = color.lstrip("#")
@@ -1012,7 +1185,7 @@ class ChapterSelect:
 
         alpha = max(
             0.0,
-            min(1.0, self.entrance_alpha)
+            min(1.0, alpha)
         )
 
         r = round(r * alpha)
@@ -1021,6 +1194,15 @@ class ChapterSelect:
 
         return f"#{r:02x}{g:02x}{b:02x}"
 
+    def fade_color(self, color):
+        """
+        Apply the normal Chapter Select entrance alpha.
+        """
+
+        return self.color_with_alpha(
+            color,
+            self.entrance_alpha
+        )
 
     def apply_entrance_alpha(self, image):
         """
@@ -1090,6 +1272,13 @@ class ChapterSelect:
 
     def show(self):
 
+        for item in self.startup_items:
+
+            self.canvas.itemconfigure(
+                item,
+                state="hidden"
+            )
+
         for item in self.canvas_items:
 
             self.canvas.itemconfigure(
@@ -1100,6 +1289,13 @@ class ChapterSelect:
     def hide(self):
 
         for item in self.canvas_items:
+
+            self.canvas.itemconfigure(
+                item,
+                state="hidden"
+            )
+
+        for item in self.startup_items:
 
             self.canvas.itemconfigure(
                 item,
@@ -1117,6 +1313,20 @@ class ChapterSelect:
         # obj_screen_transition drawing spr_aftereffect.
         if self.transitioning:
             return
+
+        if self.startup_prompt_active:
+
+            self.render_startup_prompt()
+            return
+
+        # Make sure the startup prompt cannot remain visible
+        # after switching to the normal Chapter Select.
+        for item in self.startup_items:
+
+            self.canvas.itemconfigure(
+                item,
+                state="hidden"
+            )
 
         self.update_assets()
 
@@ -1151,6 +1361,271 @@ class ChapterSelect:
 
         self.canvas.tag_raise(
             "chapter_select"
+        )
+
+    # ======================================================
+    # STARTUP COMPLETION PROMPT
+    # ======================================================
+
+    def render_startup_prompt(self):
+
+        # obj_screen_start exists on its own black screen.
+        # Hide every normal Chapter Select element while it is active.
+        for item in self.canvas_items:
+
+            self.canvas.itemconfigure(
+                item,
+                state="hidden"
+            )
+
+        completed = self.startup_completed_chapter
+        next_chapter = completed + 1
+
+        prompt_text = (
+            f"Chapter {completed} was completed."
+        )
+
+        choices = [
+            f"Play Chapter {next_chapter}",
+            "Chapter Select",
+        ]
+
+        # --------------------------------------------------
+        # Prompt text
+        # --------------------------------------------------
+
+        prompt_color = self.color_with_alpha(
+            WHITE,
+            self.startup_alpha
+        )
+
+        prompt_image = self.main_font.render(
+            prompt_text,
+            color=prompt_color
+        )
+
+        self.startup_prompt_photo = (
+            prompt_image
+        )
+
+        self.main_font_images[
+            "startup_prompt"
+        ] = prompt_image
+
+        prompt_x, prompt_y = self.ui_to_screen(
+            STARTUP_PROMPT_X,
+            STARTUP_PROMPT_Y
+            + self.startup_y_offset
+        )
+
+        self.canvas.coords(
+            self.startup_prompt_text_item,
+            prompt_x,
+            prompt_y
+        )
+
+        self.canvas.itemconfigure(
+            self.startup_prompt_text_item,
+            image=prompt_image,
+            state="normal"
+        )
+
+        # --------------------------------------------------
+        # Choices
+        # --------------------------------------------------
+
+        self.startup_choice_photos = []
+        selected_photo = None
+        selected_y = STARTUP_CHOICE_START_Y
+
+        for index, text in enumerate(choices):
+
+            color = (
+                YELLOW
+                if index == self.startup_choice_index
+                else WHITE
+            )
+
+            color = self.color_with_alpha(
+                color,
+                self.startup_alpha
+            )
+
+            image = self.main_font.render(
+                text,
+                color=color
+            )
+
+            self.startup_choice_photos.append(
+                image
+            )
+
+            self.main_font_images[
+                f"startup_choice_{index}"
+            ] = image
+
+            logical_y = (
+                STARTUP_CHOICE_START_Y
+                + (index * STARTUP_CHOICE_SPACING)
+                + self.startup_y_offset
+            )
+
+            screen_x, screen_y = self.ui_to_screen(
+                STARTUP_CHOICE_X,
+                logical_y
+            )
+
+            self.canvas.coords(
+                self.startup_choice_items[index],
+                screen_x,
+                screen_y
+            )
+
+            self.canvas.itemconfigure(
+                self.startup_choice_items[index],
+                image=image,
+                state="normal"
+            )
+
+            if index == self.startup_choice_index:
+                selected_photo = image
+                selected_y = logical_y
+
+        # --------------------------------------------------
+        # Heart cursor
+        #
+        # Original centered-choice formula:
+        #     320 - string_width(text) - 30
+        # at 640x480, then halved for our logical viewport.
+        # Using the rendered image width gives the same result
+        # without hardcoding a separate X for each choice.
+        # --------------------------------------------------
+
+        if selected_photo is not None:
+
+            logical_text_width = (
+                selected_photo.width()
+                / max(self.scale, 0.0001)
+            )
+
+            heart_x = (
+                STARTUP_CHOICE_X
+                - (logical_text_width / 2)
+                - STARTUP_HEART_GAP
+            )
+
+            heart_y = (
+                selected_y
+                + STARTUP_HEART_Y_OFFSET
+            )
+
+            heart = self.heart_image.copy()
+
+            alpha_channel = heart.getchannel(
+                "A"
+            )
+
+            alpha_channel = alpha_channel.point(
+                lambda value: round(
+                    value
+                    * max(
+                        0.0,
+                        min(1.0, self.startup_alpha)
+                    )
+                )
+            )
+
+            heart.putalpha(
+                alpha_channel
+            )
+
+            heart = heart.resize(
+                (
+                    max(
+                        1,
+                        round(
+                            heart.width
+                            * self.scale
+                        )
+                    ),
+                    max(
+                        1,
+                        round(
+                            heart.height
+                            * self.scale
+                        )
+                    )
+                ),
+                Image.Resampling.NEAREST
+            )
+
+            self.startup_heart_photo = (
+                ImageTk.PhotoImage(heart)
+            )
+
+            screen_x, screen_y = self.ui_to_screen(
+                heart_x,
+                heart_y
+            )
+
+            self.canvas.coords(
+                self.startup_cursor_item,
+                screen_x,
+                screen_y
+            )
+
+            self.canvas.itemconfigure(
+                self.startup_cursor_item,
+                image=self.startup_heart_photo,
+                state="normal"
+            )
+
+        # --------------------------------------------------
+        # Version display
+        #
+        # obj_ui_version is alpha-faded with the prompt, but
+        # does not share the -40px slide. Its scale is half
+        # the prompt/choice text at our logical resolution.
+        # --------------------------------------------------
+
+        version_color = self.color_with_alpha(
+            GRAY,
+            self.startup_alpha
+        )
+
+        version_image = self.main_font.render(
+            "DELTARUNE v24",
+            color=version_color,
+            scale_multiplier=STARTUP_VERSION_SCALE
+        )
+
+        self.startup_version_photo = (
+            version_image
+        )
+
+        self.main_font_images[
+            "startup_version"
+        ] = version_image
+
+        version_x, version_y = self.ui_to_screen(
+            STARTUP_VERSION_X,
+            STARTUP_VERSION_Y
+        )
+
+        self.canvas.coords(
+            self.startup_version_item,
+            version_x,
+            version_y
+        )
+
+        self.canvas.itemconfigure(
+            self.startup_version_item,
+            image=version_image,
+            state="normal"
+        )
+
+        self.canvas.tag_raise(
+            "startup_prompt"
         )
 
     # ======================================================
@@ -1886,7 +2361,7 @@ class ChapterSelect:
             "(C) Toby Fox 2018-2026\n"
             "Exdwarf, Coolblubird\n"
               "2026-2027\n"
-            "DELTARUNE v23",
+            "DELTARUNE v24",
             color=GRAY,
             scale_multiplier=FOOTER_INFO_SCALE
         )
@@ -2041,6 +2516,15 @@ class ChapterSelect:
     def handle_input(self, key):
 
         # ==================================================
+        # Startup completion prompt
+        # ==================================================
+
+        if self.startup_prompt_active:
+
+            self.handle_startup_input(key)
+            return
+
+        # ==================================================
         # Confirmation screen
         # ==================================================
 
@@ -2105,6 +2589,139 @@ class ChapterSelect:
         elif key == "x":
 
             self.back()
+
+    def handle_startup_input(self, key):
+
+        if not self.startup_input_enabled:
+            return
+
+        if key == "Up":
+
+            self.startup_choice_index = (
+                (self.startup_choice_index - 1) % 2
+            )
+
+            self.play_sfx(SND_MENUMOVE)
+            self.render()
+
+        elif key == "Down":
+
+            self.startup_choice_index = (
+                (self.startup_choice_index + 1) % 2
+            )
+
+            self.play_sfx(SND_MENUMOVE)
+            self.render()
+
+        elif key == "z":
+
+            self.startup_input_enabled = False
+
+            if self.startup_choice_index == 0:
+
+                # PLAY CHAPTER X+1.
+                # launch_chapter() already plays SND_MENUSELECT,
+                # which intentionally stands in for snd_select.
+                target_chapter = (
+                    self.startup_completed_chapter + 1
+                )
+
+                self.selected_chapter = (
+                    target_chapter
+                )
+
+                self.launch_chapter(
+                    target_chapter
+                )
+
+            else:
+
+                # CHAPTER SELECT.
+                self.play_sfx(SND_MENUSELECT)
+                self.start_normal_chapter_select(
+                    from_startup_prompt=True
+                )
+
+    def start_normal_chapter_select(
+        self,
+        from_startup_prompt=False
+    ):
+
+        if self.startup_job is not None:
+
+            try:
+                self.root.after_cancel(
+                    self.startup_job
+                )
+            except tk.TclError:
+                pass
+
+            self.startup_job = None
+
+        self.startup_prompt_active = False
+        self.startup_input_enabled = False
+
+        for item in self.startup_items:
+
+            self.canvas.itemconfigure(
+                item,
+                state="hidden"
+            )
+
+        self.selection = "chapters"
+        self.footer_index = 0
+        self.confirm_index = 0
+        self.selected_chapter = None
+
+        # When arriving here from obj_screen_start, the original
+        # obj_screen_select.init() highlights the highest revealed
+        # chapter. On an ordinary launch, preserve this Python
+        # version's existing initial chapter_index behavior.
+        if from_startup_prompt:
+
+            highest_revealed = (
+                self.progress.highest_revealed_chapter(
+                    self.available_chapters
+                )
+            )
+
+            self.chapter_index = max(
+                0,
+                min(
+                    self.available_chapters - 1,
+                    highest_revealed - 1
+                )
+            )
+
+        # Start the drone only after the player reaches the normal
+        # Chapter Select, matching change_state(Value_4).
+        self.audio.play_music(
+            "AUDIO_DRONE.ogg"
+        )
+
+        self.entrance_active = True
+        self.entrance_alpha = 0.0
+        self.entrance_y_offset = (
+            ENTRANCE_START_Y_OFFSET
+        )
+
+        self.show()
+        self.main_font.clear_cache()
+        self.render()
+
+        if self.entrance_job is not None:
+
+            try:
+                self.root.after_cancel(
+                    self.entrance_job
+                )
+            except tk.TclError:
+                pass
+
+        self.entrance_job = self.root.after(
+            ENTRANCE_FRAME_MS,
+            self.update_entrance
+        )
 
     # ======================================================
     # CHAPTER NAVIGATION
@@ -2331,6 +2948,19 @@ class ChapterSelect:
             self.entrance_job = None
 
         self.entrance_active = False
+
+        # Stop the startup prompt's fade/slide animation too,
+        # if Play Chapter 6 was selected from that screen.
+        if self.startup_job is not None:
+
+            try:
+                self.root.after_cancel(
+                    self.startup_job
+                )
+            except tk.TclError:
+                pass
+
+            self.startup_job = None
 
         # Give Tk a chance to finish drawing the confirmation
         # screen before we capture it.
@@ -2793,6 +3423,62 @@ class ChapterSelect:
     # ======================================================
     # UPDATE
     # ======================================================
+
+    def update_startup_prompt(self):
+
+        if not self.startup_prompt_active:
+
+            self.startup_job = None
+            return
+
+        # Original obj_screen_start Step:
+        #
+        # _alpha = lerp(_alpha, 1, 0.06);
+        # _y_pos = lerp(_y_pos, 220, 0.14);
+        # choice.y = lerp(choice.y, choice.ystart, 0.14);
+        #
+        # A single logical Y offset reproduces the same movement
+        # for the prompt and both choices.
+        self.startup_alpha += (
+            1.0 - self.startup_alpha
+        ) * STARTUP_ALPHA_LERP
+
+        self.startup_y_offset += (
+            0.0 - self.startup_y_offset
+        ) * STARTUP_Y_LERP
+
+        self.startup_timer += 1
+
+        if (
+            self.startup_timer
+            >= STARTUP_INPUT_DELAY_STEPS
+        ):
+            self.startup_input_enabled = True
+
+        animation_finished = (
+            self.startup_alpha
+            >= STARTUP_ALPHA_THRESHOLD
+            and abs(self.startup_y_offset) < 0.01
+        )
+
+        if animation_finished:
+
+            self.startup_alpha = 1.0
+            self.startup_y_offset = 0.0
+
+        # Avoid retaining every intermediate faded text color.
+        self.main_font.clear_cache()
+        self.render()
+
+        if animation_finished:
+
+            self.startup_job = None
+            return
+
+        self.startup_job = self.root.after(
+            STARTUP_FRAME_MS,
+            self.update_startup_prompt
+        )
 
     def update_entrance(self):
 
