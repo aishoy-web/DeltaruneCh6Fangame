@@ -1,6 +1,8 @@
 from importlib.resources import path
 import tkinter as tk
-from PIL import Image, ImageTk, ImageDraw
+import time
+import pygame
+from PIL import Image, ImageTk, ImageDraw, ImageGrab
 from pathlib import Path
 from ui_sprites import MainFont
 from audiomanager import AudioManager
@@ -73,7 +75,7 @@ FOOTER_CURSOR_LANGUAGE_X = 165
 # Chapter confirmation
 CONFIRM_HEART_X = 120
 CONFIRM_PLAY_X = 140
-CONFIRM_DONOT_X = 240
+CONFIRM_DONOT_X = 220
 CONFIRM_Y_OFFSET = 8.5
 
 CHAPTER_STAR_X = 92.5
@@ -140,6 +142,33 @@ SND_SWING = SFX_DIR / "snd_swing.wav"
 SND_MENUMOVE = SFX_DIR / "snd_menumove.wav"
 SND_MENUSELECT = SFX_DIR / "snd_menuselect.wav"
 
+CH6_SELECT = (
+    BASE_DIR
+    / "wip_music"
+    / "ch6_select_old.wav"
+)
+
+# ------------------------------------------------------
+# Chapter launch transition
+#
+# Original obj_screen_transition Step:
+#     fadeout = lerp(fadeout, 0, 0.125)
+#     xscale *= 0.95
+#     yscale *= 0.99
+#     yy *= 0.99
+#
+# The Chapter Select is captured as one image, then that
+# image is transformed over a black background.
+# ------------------------------------------------------
+
+TRANSITION_FRAME_MS = 33
+TRANSITION_BGM_FADE_MS = 500
+
+TRANSITION_ALPHA_LERP = 0.125
+TRANSITION_X_SCALE_MULTIPLIER = 0.95
+TRANSITION_Y_SCALE_MULTIPLIER = 0.99
+TRANSITION_Y_MULTIPLIER = 0.99
+
 # ------------------------------------------------------
 # Entrance animation
 #
@@ -201,6 +230,27 @@ class ChapterSelect:
 
         self.transitioning = False
         self.fade_alpha = 0
+
+        # ==================================================
+        # Chapter launch transition
+        # ==================================================
+
+        self.transition_job = None
+        self.transition_start_time = None
+        self.transition_duration_ms = 0
+
+        self.transition_fadeout = 1.0
+        self.transition_xscale = 1.0
+        self.transition_yscale = 1.0
+        self.transition_yy = UI_HEIGHT / 2
+
+        self.transition_source_image = None
+        self.transition_photo = None
+        self.transition_image_item = None
+        self.transition_black_item = None
+
+        self.chapter_confirm_sound = None
+        self.chapter_confirm_channel = None
 
         # ==================================================
         # Chapter Select entrance animation
@@ -385,35 +435,6 @@ class ChapterSelect:
                 maximum_chapter=6
             )
         )
-
-        # ----------------------------------------------
-        # Temporary diagnostics
-        # ----------------------------------------------
-
-        # print("\n--- CHAPTER PROGRESS ---")
-
-        # print(
-        #     "Official save directory:",
-        #     self.progress.official_dir
-        # )
-
-        # for chapter in self.chapters:
-
-        #     print(
-        #         f"Chapter {chapter['number']}:",
-        #         "completion =",
-        #         chapter["completion_slots"],
-        #         "URA =",
-        #         chapter["ura_results"]
-        #     )
-
-        # print(
-        #     "Shadow grid:",
-        #     self.shadow_crystal_grid
-        # )
-
-        # print("------------------------\n")
-        # self.progress.debug_official_ini()
 
     def render_shadow_crystals(self):
 
@@ -1091,6 +1112,12 @@ class ChapterSelect:
 
     def render(self):
 
+        # During the launch transition, the live Chapter
+        # Select is replaced by a captured image, just like
+        # obj_screen_transition drawing spr_aftereffect.
+        if self.transitioning:
+            return
+
         self.update_assets()
 
         self.render_chapters()
@@ -1541,7 +1568,7 @@ class ChapterSelect:
         cursor_x = (
             CONFIRM_HEART_X
             if self.confirm_index == 0
-            else CONFIRM_DONOT_X - 5
+            else CONFIRM_DONOT_X - 25
         )
 
         cursor_y = (
@@ -2281,10 +2308,487 @@ class ChapterSelect:
 
     def launch_chapter(self, chapter):
 
-        if chapter == 6:
-            self.selected_chapter = 6
-            self.root.destroy()
-            # A custom sound effect called "ch6_select" will be played here, but it hasn't been made yet.
+        if chapter != 6:
+            return
+
+        if self.transitioning:
+            return
+
+        self.selected_chapter = 6
+        self.transitioning = True
+
+        # Stop the entrance animation from redrawing the live
+        # Chapter Select underneath the transition.
+        if self.entrance_job is not None:
+
+            try:
+                self.root.after_cancel(
+                    self.entrance_job
+                )
+            except tk.TclError:
+                pass
+
+            self.entrance_job = None
+
+        self.entrance_active = False
+
+        # Give Tk a chance to finish drawing the confirmation
+        # screen before we capture it.
+        self.root.update_idletasks()
+
+        # --------------------------------------------------
+        # Capture the visible 320x240 Chapter Select viewport.
+        #
+        # This is the Tkinter equivalent of:
+        #
+        # sprite_create_from_surface(application_surface, ...)
+        # --------------------------------------------------
+
+        self.transition_source_image = (
+            self.capture_chapter_select()
+        )
+
+        # --------------------------------------------------
+        # Fade AUDIO_DRONE over 500 ms.
+        #
+        # AudioManager uses pygame for this project, so use
+        # pygame.mixer.music.fadeout to match GameMaker's
+        # audio_sound_gain(..., 0, 500) behavior.
+        # --------------------------------------------------
+
+        try:
+
+            if pygame.mixer.music.get_busy():
+
+                pygame.mixer.music.fadeout(
+                    TRANSITION_BGM_FADE_MS
+                )
+
+            else:
+
+                self.audio.stop_music()
+
+        except pygame.error:
+
+            # Fallback if the mixer music stream is not active.
+            self.audio.stop_music()
+
+        # --------------------------------------------------
+        # Play the Chapter 6 confirmation sound and snd_menuselect
+        # --------------------------------------------------
+        self.play_sfx(SND_MENUSELECT)
+        if CH6_SELECT.exists():
+
+            self.chapter_confirm_sound = (
+                pygame.mixer.Sound(
+                    str(CH6_SELECT)
+                )
+            )
+
+            self.chapter_confirm_channel = (
+                self.chapter_confirm_sound.play()
+            )
+
+            self.transition_duration_ms = max(
+                1,
+                round(
+                    self.chapter_confirm_sound.get_length()
+                    * 1000
+                )
+            )
+
+        else:
+
+            # Keep the transition testable even if the WIP
+            # sound has not been copied into the project yet.
+            print(
+                "Chapter Select warning: "
+                f"{CH6_SELECT} was not found."
+            )
+
+            self.transition_duration_ms = 1000
+
+        # --------------------------------------------------
+        # Original obj_screen_transition starting values.
+        # --------------------------------------------------
+
+        self.transition_fadeout = 1.0
+        self.transition_xscale = 1.0
+        self.transition_yscale = 1.0
+        self.transition_yy = UI_HEIGHT / 2
+
+        self.transition_start_time = (
+            time.perf_counter()
+        )
+
+        # Black background drawn above the live Chapter
+        # Select. The captured image is then drawn above it.
+        self.transition_black_item = (
+            self.canvas.create_rectangle(
+                0,
+                0,
+                self.canvas.winfo_width(),
+                self.canvas.winfo_height(),
+                fill=BLACK,
+                outline="",
+                tags=("chapter_transition",)
+            )
+        )
+
+        center_x, center_y = self.ui_to_screen(
+            UI_WIDTH / 2,
+            UI_HEIGHT / 2
+        )
+
+        self.transition_image_item = (
+            self.canvas.create_image(
+                center_x,
+                center_y,
+                anchor="center",
+                tags=("chapter_transition",)
+            )
+        )
+
+        self.render_transition_frame()
+
+        self.transition_job = self.root.after(
+            TRANSITION_FRAME_MS,
+            self.update_transition
+        )
+
+    def capture_chapter_select(self):
+        """
+        Capture the exact visible Chapter Select viewport as one
+        RGBA image.
+
+        IMPORTANT ON WINDOWS:
+        Tk coordinates and ImageGrab coordinates are not always
+        expressed in the same units when Windows display scaling
+        (125%, 150%, etc.) is enabled. Using Tk's coordinates as
+        ImageGrab pixels can therefore capture the wrong rectangle.
+
+        We avoid that by grabbing the screen first, measuring the
+        relationship between Tk screen units and physical screenshot
+        pixels, then converting the viewport rectangle into the
+        screenshot's pixel coordinate system before cropping it.
+
+        This keeps the frozen image aligned with the live Chapter
+        Select and prevents the footer from being cropped away.
+        """
+
+        # Make sure Tk has committed the current confirmation frame.
+        self.root.update_idletasks()
+
+        canvas_x = self.canvas.winfo_rootx()
+        canvas_y = self.canvas.winfo_rooty()
+
+        viewport_left = (
+            canvas_x
+            + self.offset_x
+        )
+
+        viewport_top = (
+            canvas_y
+            + self.offset_y
+        )
+
+        viewport_width = (
+            UI_WIDTH
+            * self.scale
+        )
+
+        viewport_height = (
+            UI_HEIGHT
+            * self.scale
+        )
+
+        # Grab first, crop second. This lets us compensate for
+        # Windows DPI/display scaling rather than assuming Tk screen
+        # coordinates are already physical pixels.
+        screen_image = ImageGrab.grab().convert("RGBA")
+
+        tk_screen_width = max(
+            1,
+            self.root.winfo_screenwidth()
+        )
+
+        tk_screen_height = max(
+            1,
+            self.root.winfo_screenheight()
+        )
+
+        grab_scale_x = (
+            screen_image.width
+            / tk_screen_width
+        )
+
+        grab_scale_y = (
+            screen_image.height
+            / tk_screen_height
+        )
+
+        left = round(
+            viewport_left
+            * grab_scale_x
+        )
+
+        top = round(
+            viewport_top
+            * grab_scale_y
+        )
+
+        right = round(
+            (
+                viewport_left
+                + viewport_width
+            )
+            * grab_scale_x
+        )
+
+        bottom = round(
+            (
+                viewport_top
+                + viewport_height
+            )
+            * grab_scale_y
+        )
+
+        # Keep the crop inside the grabbed screen. On the normal
+        # fullscreen/primary-monitor setup these clamps should not
+        # change anything, but they protect against rounding at the
+        # screen edges.
+        left = max(
+            0,
+            min(
+                left,
+                screen_image.width - 1
+            )
+        )
+
+        top = max(
+            0,
+            min(
+                top,
+                screen_image.height - 1
+            )
+        )
+
+        right = max(
+            left + 1,
+            min(
+                right,
+                screen_image.width
+            )
+        )
+
+        bottom = max(
+            top + 1,
+            min(
+                bottom,
+                screen_image.height
+            )
+        )
+
+        image = screen_image.crop(
+            (
+                left,
+                top,
+                right,
+                bottom
+            )
+        )
+
+        # Store the aftereffect at the game's logical 320x240
+        # resolution, just like a GameMaker application_surface.
+        image = image.resize(
+            (
+                UI_WIDTH,
+                UI_HEIGHT
+            ),
+            Image.Resampling.NEAREST
+        )
+
+        return image
+
+    def update_transition(self):
+
+        if not self.transitioning:
+            self.transition_job = None
+            return
+
+        # --------------------------------------------------
+        # Original GameMaker Step:
+        #
+        # fadeout = lerp(fadeout, 0, 0.125);
+        # xscale *= 0.95;
+        # yscale *= 0.99;
+        # yy *= 0.99;
+        # --------------------------------------------------
+
+        self.transition_fadeout += (
+            0.0 - self.transition_fadeout
+        ) * TRANSITION_ALPHA_LERP
+
+        self.transition_xscale *= (
+            TRANSITION_X_SCALE_MULTIPLIER
+        )
+
+        self.transition_yscale *= (
+            TRANSITION_Y_SCALE_MULTIPLIER
+        )
+
+        self.transition_yy *= (
+            TRANSITION_Y_MULTIPLIER
+        )
+
+        self.render_transition_frame()
+
+        elapsed_ms = (
+            time.perf_counter()
+            - self.transition_start_time
+        ) * 1000
+
+        # GameMaker waits for a timer based on the length of
+        # the chapter-confirm sound before launching.
+        if (
+            elapsed_ms
+            >= self.transition_duration_ms
+        ):
+
+            self.finish_chapter_transition()
+            return
+
+        self.transition_job = self.root.after(
+            TRANSITION_FRAME_MS,
+            self.update_transition
+        )
+
+    def render_transition_frame(self):
+
+        if (
+            self.transition_source_image is None
+            or self.transition_image_item is None
+        ):
+            return
+
+        source = self.transition_source_image
+
+        logical_width = max(
+            1,
+            round(
+                source.width
+                * self.transition_xscale
+            )
+        )
+
+        logical_height = max(
+            1,
+            round(
+                source.height
+                * self.transition_yscale
+            )
+        )
+
+        frame = source.resize(
+            (
+                logical_width,
+                logical_height
+            ),
+            Image.Resampling.NEAREST
+        )
+
+        # draw_sprite_ext(..., alpha=fadeout)
+        alpha = max(
+            0.0,
+            min(
+                1.0,
+                self.transition_fadeout
+            )
+        )
+
+        alpha_channel = frame.getchannel(
+            "A"
+        )
+
+        alpha_channel = alpha_channel.point(
+            lambda value: round(
+                value * alpha
+            )
+        )
+
+        frame.putalpha(
+            alpha_channel
+        )
+
+        # Apply the normal fullscreen viewport scale after
+        # the logical GameMaker-style transform.
+        screen_width = max(
+            1,
+            round(
+                logical_width
+                * self.scale
+            )
+        )
+
+        screen_height = max(
+            1,
+            round(
+                logical_height
+                * self.scale
+            )
+        )
+
+        frame = frame.resize(
+            (
+                screen_width,
+                screen_height
+            ),
+            Image.Resampling.NEAREST
+        )
+
+        self.transition_photo = (
+            ImageTk.PhotoImage(
+                frame
+            )
+        )
+
+        center_x, center_y = (
+            self.ui_to_screen(
+                UI_WIDTH / 2,
+                self.transition_yy
+            )
+        )
+
+        self.canvas.coords(
+            self.transition_image_item,
+            center_x,
+            center_y
+        )
+
+        self.canvas.itemconfigure(
+            self.transition_image_item,
+            image=self.transition_photo
+        )
+
+        self.canvas.tag_raise(
+            "chapter_transition"
+        )
+
+    def finish_chapter_transition(self):
+
+        self.transition_job = None
+
+        # Equivalent to audio_stop_all() immediately before
+        # GameMaker's game_change().
+        try:
+            pygame.mixer.stop()
+            pygame.mixer.music.stop()
+        except pygame.error:
+            pass
+
+        self.audio.stop_music()
+
+        self.root.destroy()
 
     # ======================================================
     # UPDATE
