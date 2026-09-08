@@ -5,7 +5,7 @@ from pathlib import Path
 from animated_sprite import AnimatedSprite
 from rooms import ROOMS
 from PIL import Image, ImageTk
-from chapterselect import ChapterSelect
+# from chapterselect import ChapterSelect
 from ui_sprites import UISpriteSheet
 from hud import HUD
 from player import Player
@@ -15,6 +15,9 @@ import json
 from audiomanager import AudioManager
 from menu import Menu
 from progress import ProgressTracker
+from chapter_intro import ChapterIntro
+from legend import LegendSequence
+from chapter_logo import ChapterLogoSequence
 import os #file manip
 
 
@@ -37,9 +40,13 @@ uiSpritesheetPath = BASE_DIR/"sprites"/"ui"/"menu+HUD_spritesheet.png" #unbeliev
 
 
 class Game:
-    def __init__(self):
+    def __init__(self, startup = None):
         # INITALIZATION
         # relating to screen size
+        self.startup = startup
+        # Startup screens use explicit game states so the same Tk window
+        # can move through intro -> legend/logo -> file select.
+        self.state = "boot"
         self.root = tk.Tk()
         icon_path = BASE_DIR / "sprites" / "assets" / "taskbar_logo.png"
         icon = ImageTk.PhotoImage(Image.open(icon_path))
@@ -68,6 +75,10 @@ class Game:
         # screen display
         self.create_widgets()
         self.load_dialogue()
+        import ui_sprites
+
+        print("ui_sprites loaded from:", ui_sprites.__file__)
+        print("UISpriteSheet has get:", hasattr(UISpriteSheet, "get"))
         self.ui_sprites = UISpriteSheet(self)
         self.hud = HUD(self)
         self.character_index = 0
@@ -106,7 +117,15 @@ class Game:
         self.fade_duration = 250 #milliseconds for half the fade transition
         self.fade_start_time = None
         self.fade_mode = None
+
+        # Fade used specifically for the startup-screen -> File Select handoff.
+        self.file_select_fade_active = False
+        self.file_select_fade_started_at = None
+        self.file_select_fade_duration = 0.75
+
         self.audio = AudioManager()
+        self.progress = ProgressTracker()
+        self.active_startup_screen = None
         self.quitAnimated = AnimatedSprite( #escape text init
                     uiSpritesheetPath,
                     cell_width=87,
@@ -119,9 +138,32 @@ class Game:
                     animation_speed = 2.0
                 ) 
         
-        #file select
+        # file select
+        # Keep track of the Canvas items FileMenu creates so Game can hide
+        # the file-select screen until the startup sequence has finished.
+        file_menu_items_before = set(self.canvas.find_all())
         self.file_menu = FileMenu(self)
         self.file_menu.create_widgets()
+        file_menu_items_after = set(self.canvas.find_all())
+        self.file_menu_canvas_items = list(
+            file_menu_items_after - file_menu_items_before
+        )
+
+        # Startup screen controllers. They all draw into this same Canvas;
+        # game.py only decides which one owns the screen at a given moment.
+        self.chapter_intro = ChapterIntro(
+            self,
+            on_complete=self.finish_chapter_intro
+        )
+        self.legend_sequence = LegendSequence(
+            self,
+            on_complete=self.finish_legend
+        )
+        self.chapter_logo = ChapterLogoSequence(
+            self,
+            chapter=6,
+            on_complete=self.finish_chapter_logo
+        )
 
         # Inventory
         self.LW_inventory = [
@@ -134,23 +176,286 @@ class Game:
         self.load_room("mainMenu")
         self.player = Player(self)
         self.menu = Menu(self)
-        self.chapter_select = ChapterSelect(self)
+        # self.chapter_select = ChapterSelect(self)
         
         # Draw everything once finished initializing, so that the game starts with a fully rendered screen
         self.render_static()
         self.update_debug_hud()
         self.transitioning = False
-        self.state = "playing"
+
+        # Do not jump straight to File Select. Chapter 6 now owns its
+        # startup flow inside this same Game process.
+        self._set_file_menu_visible(False)
+        self.start_chapter_startup()
         self.update()
         '''self.typing = True
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
             self.dialogue_data = json.load(f)
         self.type_text()'''
+    # ======================================================
+    # CHAPTER 6 STARTUP FLOW
+    # ======================================================
+
+    STARTUP_SCREEN_STATES = {
+        "chapter_intro",
+        "legend",
+        "chapter_logo",
+    }
+
     def launch_chapter(self, chapter):
-        if chapter == 6:
-            print("Initializing Chapter 6")
-        # Temporary, add the actual chapter startup once chapter select is working
-            self.state = "playing"
+        if chapter != 6:
+            return
+
+        print("Initializing Chapter 6")
+        self.start_chapter_startup()
+
+    def _get_startup_route_override(self):
+        """
+        Optional development/testing override.
+
+        Supported values:
+            "chapter_intro"
+            "legend"
+            "file_select"
+
+        The normal game does not need to provide this. It is useful while
+        testing the sequence before real completion files exist.
+        """
+
+        if isinstance(self.startup, dict):
+            return self.startup.get("startup_route")
+
+        if self.startup is not None:
+            return getattr(
+                self.startup,
+                "startup_route",
+                None
+            )
+
+        return None
+
+    def determine_chapter_startup_route(self):
+        """
+        Current Chapter 6 startup rule.
+
+        Chapter 5's recovered initializer routes completed chapter data to:
+            room_legend -> PLACE_LOGO -> PLACE_MENU
+
+        Until the Chapter 4-style mid-chapter rules are implemented, both a
+        brand-new Chapter 6 and an in-progress Chapter 6 use chapter_intro.
+        """
+
+        override = self._get_startup_route_override()
+
+        if override in {
+            "chapter_intro",
+            "legend",
+            "file_select",
+        }:
+            return override
+
+        if self.progress.completed_chapter_any_slot(6):
+            return "legend"
+
+        return "chapter_intro"
+
+    def start_chapter_startup(self):
+        route = self.determine_chapter_startup_route()
+
+        if route == "legend":
+            self.start_legend()
+        elif route == "file_select":
+            self.start_file_select()
+        else:
+            self.start_chapter_intro()
+
+    def _prepare_startup_screen(self):
+        """
+        Hide normal gameplay UI while one of the startup controllers owns
+        the Canvas.
+        """
+
+        self._set_file_menu_visible(False)
+
+        try:
+            self.menu.close()
+        except Exception:
+            pass
+
+        try:
+            self.hud.close()
+        except Exception:
+            pass
+
+        try:
+            self.dialogue_box.hide()
+        except Exception:
+            pass
+
+    def _hide_active_startup_screen(self):
+        if self.active_startup_screen is None:
+            return
+
+        try:
+            self.active_startup_screen.hide()
+        except Exception:
+            pass
+
+        self.active_startup_screen = None
+
+    def start_chapter_intro(self):
+        self._hide_active_startup_screen()
+        self._prepare_startup_screen()
+
+        self.state = "chapter_intro"
+        self.active_startup_screen = self.chapter_intro
+        self.chapter_intro.start()
+
+    def finish_chapter_intro(self):
+        # ChapterIntro finishes on a completely black frame. File Select is
+        # revealed underneath a black Game overlay, then faded into view.
+        self.start_file_select(fade_in=True)
+
+    def start_legend(self):
+        self._hide_active_startup_screen()
+        self._prepare_startup_screen()
+
+        self.state = "legend"
+        self.active_startup_screen = self.legend_sequence
+        self.legend_sequence.start()
+
+    def finish_legend(self):
+        # Direct Python equivalent of obj_legend eventually going to
+        # PLACE_LOGO.
+        self.start_chapter_logo()
+
+    def start_chapter_logo(self):
+        self._hide_active_startup_screen()
+        self._prepare_startup_screen()
+
+        self.state = "chapter_logo"
+        self.active_startup_screen = self.chapter_logo
+        self.chapter_logo.start()
+
+    def finish_chapter_logo(self):
+        # Startup PROCESS_LOGO (global.plot == 0) goes to PLACE_MENU.
+        self.start_file_select()
+
+    def start_file_select(self, fade_in=False):
+        # Install the black Game overlay before removing the intro. This keeps
+        # the handoff black with no one-frame flash of the File Select screen.
+        if fade_in:
+            self.fade_alpha = 255
+            self.file_select_fade_active = True
+            self.file_select_fade_started_at = time.perf_counter()
+        else:
+            self.file_select_fade_active = False
+            self.file_select_fade_started_at = None
+            self.fade_alpha = 0
+
+        self._hide_active_startup_screen()
+        self.state = "file_select"
+
+        try:
+            self.audio.stop_music()
+        except Exception:
+            pass
+
+        # Let FileMenu initialize/refresh itself if it exposes an open()
+        # method, then make every known FileMenu canvas item visible.
+        open_file_menu = getattr(
+            self.file_menu,
+            "open",
+            None
+        )
+
+        if callable(open_file_menu):
+            try:
+                open_file_menu()
+            except TypeError:
+                # Some early FileMenu revisions may not use open() yet.
+                pass
+
+        self._set_file_menu_visible(True)
+
+        try:
+            self.file_menu.render_static()
+        except Exception:
+            pass
+
+        self._set_file_menu_visible(True)
+
+        if fade_in:
+            self.render_fade()
+
+    def _set_file_menu_visible(self, visible):
+        """
+        FileMenu predates the new startup state machine, so this helper works
+        with both styles:
+          * FileMenu.show()/hide(), if those exist
+          * FileMenu.canvas_items, if that exists
+          * the exact Canvas items captured when FileMenu.create_widgets()
+            ran in __init__
+        """
+
+        state = "normal" if visible else "hidden"
+
+        method_name = "show" if visible else "hide"
+        method = getattr(
+            self.file_menu,
+            method_name,
+            None
+        )
+
+        if callable(method):
+            try:
+                method()
+            except TypeError:
+                pass
+
+        items = set(
+            getattr(
+                self,
+                "file_menu_canvas_items",
+                []
+            )
+        )
+
+        file_menu_owned = getattr(
+            self.file_menu,
+            "canvas_items",
+            None
+        )
+
+        if file_menu_owned:
+            items.update(file_menu_owned)
+
+        for item in items:
+            try:
+                self.canvas.itemconfigure(
+                    item,
+                    state=state
+                )
+            except tk.TclError:
+                pass
+
+        # Harmless fallback for FileMenu revisions that use a common tag.
+        for tag in ("file_menu", "filemenu"):
+            try:
+                self.canvas.itemconfigure(
+                    tag,
+                    state=state
+                )
+            except tk.TclError:
+                pass
+
+        if visible:
+            for item in items:
+                try:
+                    self.canvas.tag_raise(item)
+                except tk.TclError:
+                    pass
+
     def start_dialogue(self, dialogue=None, lock_player=True):
         self.dialogue_active = True
         self.dialogue_blocks_movement = lock_player
@@ -209,7 +514,7 @@ class Game:
 
         elapsed = time.time() - self.escapePressTime
         
-        if elapsed >= self.hold_duration:
+        if elapsed >= self.escapeKeyHoldDuration:
             print("Condition met. Closing application.")
             self.root.destroy()
         else:
@@ -332,40 +637,89 @@ class Game:
         canvas_height = self.canvas.winfo_height()
         if canvas_width < 2 or canvas_height < 2:
             return
+
         self.update_scale()
         self.render_static()
+
+        if self.state in self.STARTUP_SCREEN_STATES:
+            self._set_file_menu_visible(False)
+            if self.active_startup_screen is not None:
+                self.active_startup_screen.render()
+
+        elif self.state == "file_select":
+            self._set_file_menu_visible(True)
+
         if self.fade_alpha > 0:
             self.render_fade()
+
     def render_static(self):
         self.render_background()
         self.hud.render_static()
         self.menu.render_static()
+
+        # Capture any FileMenu items that are created lazily by render_static().
+        file_menu_items_before = set(self.canvas.find_all())
         self.file_menu.render_static()
+        file_menu_items_after = set(self.canvas.find_all())
+
+        self.file_menu_canvas_items = list(
+            set(self.file_menu_canvas_items)
+            | (file_menu_items_after - file_menu_items_before)
+        )
+
         self.render_debug_static()
         self.dialogue_box.render_static()
+
+        # FileMenu existed before the new startup flow and its render_static()
+        # may make items visible. Keep it hidden until PLACE_MENU/file_select.
+        if self.state != "file_select":
+            self._set_file_menu_visible(False)
+
+        if (
+            self.state in self.STARTUP_SCREEN_STATES
+            and self.active_startup_screen is not None
+        ):
+            self.active_startup_screen.render()
+
     def render_dynamic(self):
+        # Startup screens own the full Canvas. Do not render Kris/HUD/menu on
+        # top of them.
+        if self.state in self.STARTUP_SCREEN_STATES:
+            if self.active_startup_screen is not None:
+                self.active_startup_screen.render()
+            self.render_fade()
+            return
+
+        # FileMenu owns the screen once the startup sequence reaches
+        # PLACE_MENU.
+        if self.state == "file_select":
+            self._set_file_menu_visible(True)
+            self.render_fade()
+            return
+
         self.render_background_dynamic()
-        
+
         #special renders, like the player, the menu, dialog, etc
         if hasattr(self, "player"):
             self.player.render()
-        
+
         if self.isEscapeHeld: #if holding the button then display it
             self.quitAnimated.update()
             self.renderQuit()
-            
-        
+
+
         if self.menu.visible:
             self.menu.render_dynamic()
             self.canvas.tag_raise("menu")
-            
+
         if self.dialogue_box.visible:
             self.dialogue_box.layout_widgets()
-            
+
         self.render_debug_dynamic()
         self.update_debug_hud()
         self.canvas.tag_raise(self.debug_text)
         self.render_fade()
+
     def renderQuit(self):
         #get the frame, resize it, and then render it to the canvas
         frame = self.animation.get_frame()
@@ -608,26 +962,50 @@ class Game:
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         key = event.keysym
-        if key == "F2":
-            self.state = "chapter_select"
-            self.chapter_select.open()
-            return
+
         if self.transitioning:
             return
-        key = event.keysym
-        
-        # Ignore repeated KeyPress events while a key is held
+
+        # Ignore repeated KeyPress events while a key is held.
         if key in self.keys_pressed:
             return
         self.keys_pressed.add(key)
+
+        # --------------------------------------------------
+        # Startup screen input
+        # --------------------------------------------------
+        if self.state in self.STARTUP_SCREEN_STATES:
+            if self.active_startup_screen is not None:
+                self.active_startup_screen.handle_input(key)
+            return
+
+        # --------------------------------------------------
+        # File Select input
+        # --------------------------------------------------
+        if self.state == "file_select":
+            if self.file_select_fade_active:
+                return
+
+            handle_input = getattr(
+                self.file_menu,
+                "handle_input",
+                None
+            )
+
+            if callable(handle_input):
+                handle_input(key)
+
+            # Do not allow file-select keys to leak into Kris/menu controls.
+            return
+
         # C = menu open / close
         if key == "c":
             self.toggle_menu()
             return
-        elif key == "z": #assuming ive done it right then this should just call the handle_z function, which will handle dialogue and interaction
+        elif key == "z":
             self.handle_z()
             return
-        
+
         # Menu controls
         if self.state == "menu":
             if key == "Up":
@@ -639,7 +1017,7 @@ class Game:
             elif key == "x":
                 self.handle_menu_back()
                 return
-            
+
         # Direction keys
         if key in (
             "Left",
@@ -649,6 +1027,7 @@ class Game:
             if key in self.direction_keys:
                 self.direction_keys.remove(key)
             self.direction_keys.append(key)
+
     def key_release(self, event):
         self.keys_pressed.discard(event.keysym)
         if event.keysym in self.direction_keys:
@@ -814,6 +1193,49 @@ class Game:
             self.update_transition()
             self.root.after(16, self.update)
             return
+
+        # --------------------------------------------------
+        # Chapter startup screens
+        # --------------------------------------------------
+        if self.state in self.STARTUP_SCREEN_STATES:
+            screen = self.active_startup_screen
+
+            if screen is not None:
+                screen.update()
+
+                # update() may finish the screen and immediately move to the
+                # next state, so only render it again if it is still active.
+                if self.active_startup_screen is screen:
+                    screen.render()
+
+            frame_ms = getattr(screen, "FRAME_MS", 16) if screen is not None else 16
+            self.root.after(frame_ms, self.update)
+            return
+
+        # --------------------------------------------------
+        # File Select
+        # --------------------------------------------------
+        if self.state == "file_select":
+            self._set_file_menu_visible(True)
+
+            if self.file_select_fade_active:
+                elapsed = time.perf_counter() - self.file_select_fade_started_at
+                progress = min(
+                    elapsed / self.file_select_fade_duration,
+                    1.0
+                )
+                self.fade_alpha = round(255 * (1.0 - progress))
+                self.render_fade()
+
+                if progress >= 1.0:
+                    self.file_select_fade_active = False
+                    self.file_select_fade_started_at = None
+                    self.fade_alpha = 0
+                    self.render_fade()
+
+            self.root.after(32, self.update)
+            return
+
         if self.state == "playing":
             movement_keys_held = bool(
                 self.keys_pressed & {"Left", "Right", "Up", "Down"}
@@ -880,15 +1302,32 @@ class Game:
                         # Kris stopped because the movement key was released.
                         # Naturally advance to the appropriate rest frame.
                         self.player.animation.stop_at_next_rest_frame()
+
             self.was_moving = moved
-        self.check_room_transitions()
-        self.update_camera()
-        self.hud.update_position()
-        if self.dialogue_box.visible:
-            self.dialogue_box.update_position()
-        self.render_dynamic()
-        self.player.animation.update()
-        self.check_dialogue_triggers()
+
+            self.check_room_transitions()
+            self.update_camera()
+            self.hud.update_position()
+
+            if self.dialogue_box.visible:
+                self.dialogue_box.update_position()
+
+            self.render_dynamic()
+            self.player.animation.update()
+            self.check_dialogue_triggers()
+
+        elif self.state == "menu":
+            # Keep the camera/UI alive, but do not run room transitions,
+            # movement, or dialogue triggers while the menu owns input.
+            self.update_camera()
+            self.hud.update_position()
+
+            if self.dialogue_box.visible:
+                self.dialogue_box.update_position()
+
+            self.render_dynamic()
+
         self.root.after(32, self.update) # Framerate, lower number = higher framerate
+
     def run(self):
         self.root.mainloop()

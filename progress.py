@@ -128,65 +128,6 @@ class ProgressTracker:
             raise ValueError(
                 "Save slot must be 0, 1, or 2."
             )
-
-    # def debug_official_ini(self):
-    #     if self.official_dir is None:
-    #         # print("No official DELTARUNE directory.")
-    #         return
-
-    #     ini_path = (
-    #         self.official_dir
-    #         / "dr.ini"
-    #     )
-
-    #     print(
-    #         "dr.ini path:",
-    #         ini_path
-    #     )
-
-    #     print(
-    #         "dr.ini exists:",
-    #         ini_path.exists()
-    #     )
-
-    #     if not ini_path.exists():
-    #         return
-
-    #     parser = ConfigParser(
-    #         interpolation=None
-    #     )
-
-    #     parser.optionxform = str
-
-    #     parser.read(
-    #         ini_path,
-    #         encoding="utf-8"
-    #     )
-
-    #     print(
-    #         "dr.ini sections:",
-    #         parser.sections()
-    #     )
-
-    #     if parser.has_section(
-    #         "URA"
-    #     ):
-
-    #         print(
-    #             "URA contents:",
-    #             dict(
-    #                 parser.items(
-    #                     "URA"
-    #                 )
-    #             )
-    #         )
-
-    #     else:
-
-    #         print(
-    #             "No [URA] section exists."
-    #         )
-
     # ======================================================
     # CURRENT SAVE FILES
     # ======================================================

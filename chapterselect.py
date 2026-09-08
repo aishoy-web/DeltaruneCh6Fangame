@@ -2,6 +2,8 @@ from importlib.resources import path
 import tkinter as tk
 import time
 import pygame
+import subprocess
+import sys
 from PIL import Image, ImageTk, ImageDraw, ImageGrab
 from pathlib import Path
 from ui_sprites import MainFont
@@ -145,8 +147,10 @@ SND_MENUSELECT = SFX_DIR / "snd_menuselect.wav"
 CH6_SELECT = (
     BASE_DIR
     / "wip_music"
-    / "ch6_select_old.wav"
+    / "ch6_select_even_less_old.wav"
 )
+
+CHAPTER6_ENTRY = BASE_DIR / "chapter6.py"
 
 # ------------------------------------------------------
 # Chapter launch transition
@@ -295,7 +299,9 @@ class ChapterSelect:
         # ==================================================
 
         self.startup_prompt_active = False
+        self.startup_prompt_type = None
         self.startup_completed_chapter = 0
+        self.startup_in_progress_chapter = 0
         self.startup_choice_index = 0
         self.startup_alpha = 0.0
         self.startup_y_offset = STARTUP_START_Y_OFFSET
@@ -491,20 +497,20 @@ class ChapterSelect:
 
     def determine_startup_prompt(self):
         """
-        Reproduce the completed-chapter startup decision used by
-        obj_CHAPTER_SELECT for the part of the launcher we currently
-        support.
+        Reproduce the relevant obj_CHAPTER_SELECT startup-state
+        precedence for this Chapter 6 launcher.
 
-        Show "Chapter X was completed." only when:
+        The original launcher first finds the highest unfinished
+        chapter that has a normal save, then the highest completed
+        chapter. Its resulting precedence is:
 
-            * at least one chapter is completed,
-            * there is a playable next chapter, and
-            * there is not a newer unfinished chapter in progress.
+            * unfinished next chapter -> Continue prompt
+            * otherwise completed chapter -> Play next prompt
+            * a gap of 2+ chapters -> normal Chapter Select
+            * latest available chapter completed -> normal Chapter Select
 
-        The last condition mirrors the original launcher's preference
-        for its Continue prompt over the completed-chapter prompt.
-        Since the Continue screen is not implemented here yet, a newer
-        in-progress chapter falls through to the normal Chapter Select.
+        This Python project currently launches Chapter 6, so startup
+        prompts are only activated when their target chapter is 6.
         """
 
         highest_completed = 0
@@ -535,11 +541,53 @@ class ChapterSelect:
         self.startup_completed_chapter = (
             highest_completed
         )
+        self.startup_in_progress_chapter = (
+            highest_in_progress
+        )
 
+        prompt_type = None
+        target_chapter = 0
+
+        # Equivalent to the Value_2 / Value_3 / Value_4
+        # precedence in obj_CHAPTER_SELECT.init().
+        if highest_completed >= self.available_chapters:
+            prompt_type = None
+
+        elif highest_completed > 0:
+
+            if highest_in_progress > highest_completed:
+
+                if (
+                    highest_in_progress
+                    - highest_completed
+                ) >= 2:
+                    prompt_type = None
+
+                else:
+                    prompt_type = "continue"
+                    target_chapter = (
+                        highest_in_progress
+                    )
+
+            else:
+                prompt_type = "completed"
+                target_chapter = (
+                    highest_completed + 1
+                )
+
+        elif highest_in_progress > 0:
+            prompt_type = "continue"
+            target_chapter = highest_in_progress
+
+        # This fangame currently has an executable launch path only
+        # for Chapter 6. Do not strand the player on a startup prompt
+        # whose Yes/Play option cannot be launched by this program.
+        if target_chapter != 6:
+            prompt_type = None
+
+        self.startup_prompt_type = prompt_type
         self.startup_prompt_active = (
-            highest_completed > 0
-            and highest_completed < self.available_chapters
-            and highest_in_progress <= highest_completed
+            prompt_type is not None
         )
 
         if self.startup_prompt_active:
@@ -553,8 +601,8 @@ class ChapterSelect:
             self.startup_timer = 0
             self.startup_input_enabled = False
 
-            # The normal Chapter Select entrance does not begin
-            # until the player chooses "Chapter Select".
+            # obj_CHAPTER_SELECT calls stop_bgm() for both the
+            # Continue and completed-chapter startup screens.
             self.entrance_active = False
 
     def render_shadow_crystals(self):
@@ -1378,17 +1426,36 @@ class ChapterSelect:
                 state="hidden"
             )
 
-        completed = self.startup_completed_chapter
-        next_chapter = completed + 1
+        if self.startup_prompt_type == "continue":
 
-        prompt_text = (
-            f"Chapter {completed} was completed."
-        )
+            chapter = (
+                self.startup_in_progress_chapter
+            )
 
-        choices = [
-            f"Play Chapter {next_chapter}",
-            "Chapter Select",
-        ]
+            prompt_text = (
+                f"Continue from Chapter {chapter}?"
+            )
+
+            choices = [
+                "Yes",
+                "No",
+            ]
+
+        else:
+
+            completed = (
+                self.startup_completed_chapter
+            )
+            next_chapter = completed + 1
+
+            prompt_text = (
+                f"Chapter {completed} was completed."
+            )
+
+            choices = [
+                f"Play Chapter {next_chapter}",
+                "Chapter Select",
+            ]
 
         # --------------------------------------------------
         # Prompt text
@@ -2619,12 +2686,18 @@ class ChapterSelect:
 
             if self.startup_choice_index == 0:
 
-                # PLAY CHAPTER X+1.
-                # launch_chapter() already plays SND_MENUSELECT,
-                # which intentionally stands in for snd_select.
-                target_chapter = (
-                    self.startup_completed_chapter + 1
-                )
+                # YES on the Continue prompt resumes the unfinished
+                # chapter. PLAY on the completion prompt launches
+                # the next chapter. Both use the same launch
+                # transition, just like obj_CHAPTER_SELECT.
+                if self.startup_prompt_type == "continue":
+                    target_chapter = (
+                        self.startup_in_progress_chapter
+                    )
+                else:
+                    target_chapter = (
+                        self.startup_completed_chapter + 1
+                    )
 
                 self.selected_chapter = (
                     target_chapter
@@ -2636,7 +2709,9 @@ class ChapterSelect:
 
             else:
 
-                # CHAPTER SELECT.
+                # NO / CHAPTER SELECT both enter the normal
+                # Chapter Select state. snd_menuselect intentionally
+                # stands in for the original snd_select.
                 self.play_sfx(SND_MENUSELECT)
                 self.start_normal_chapter_select(
                     from_startup_prompt=True
@@ -3408,8 +3483,6 @@ class ChapterSelect:
 
         self.transition_job = None
 
-        # Equivalent to audio_stop_all() immediately before
-        # GameMaker's game_change().
         try:
             pygame.mixer.stop()
             pygame.mixer.music.stop()
@@ -3417,6 +3490,28 @@ class ChapterSelect:
             pass
 
         self.audio.stop_music()
+
+        if not CHAPTER6_ENTRY.is_file():
+            print(
+                "ERROR: Chapter 6 entry point not found:",
+                CHAPTER6_ENTRY
+            )
+            return
+
+        try:
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    str(CHAPTER6_ENTRY),
+                ],
+                cwd=str(BASE_DIR),
+            )
+        except OSError as exc:
+            print(
+                "ERROR: Could not launch Chapter 6:",
+                exc
+            )
+            return
 
         self.root.destroy()
 

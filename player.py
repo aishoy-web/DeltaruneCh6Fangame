@@ -87,11 +87,6 @@ class Player:
     def teleport(self,x,y):
         self.x = x
         self.y = y
-    # def set_sprinting(self, sprinting):
-    #     if sprinting:
-    #         self.speed = self.run_speed
-    #     else:
-    #         self.speed = self.walk_speed
     def move_left(self):
         self.facing = "left"
         new_x = self.x - self.speed
