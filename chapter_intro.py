@@ -27,6 +27,7 @@ class LogoFlake:
     y: float
     target_x: int
     target_y: int
+    vx: float
     start_time: float
     fall_speed: float
     drift_phase: float
@@ -58,9 +59,9 @@ class ChapterIntro:
     # Layout
     # --------------------------------------------------
     LOGO_CENTER_X = 160
-    LOGO_CENTER_Y = 108
-    HEART_CENTER_X = 160
-    HEART_CENTER_Y = 108
+    LOGO_CENTER_Y = 110
+    HEART_CENTER_X = 155
+    HEART_CENTER_Y = 114
 
     # These are deliberately easy to tune after seeing the animation in-game.
     LOGO_SCALE = 1.0
@@ -69,11 +70,15 @@ class ChapterIntro:
     # --------------------------------------------------
     # Timing (seconds)
     # --------------------------------------------------
-    SNOW_START = 0.15
-    LOGO_SNOW_START = 1
-    LOGO_FORM_END = 11.5
-    LOGO_HOLD_END = 13.00
-    FADE_TO_BLACK_END = 14.00
+    SNOW_START = 0.5
+    LOGO_SNOW_START = 2.25
+
+    # Approximately this many logo-forming flakes enter per second.
+    LOGO_FLAKES_PER_SECOND = 60.0
+
+    # Timing after the LAST logo flake has landed.
+    LOGO_HOLD_TIME = 1.50
+    FADE_TO_BLACK_TIME = 0.5
 
     # Z cannot skip on the very first frames.
     SKIP_SAFETY = 0.35
@@ -85,15 +90,15 @@ class ChapterIntro:
     # Every visible snow particle uses exactly this size.
     SNOW_PARTICLE_SIZE = 2
 
-    AMBIENT_FLAKES_PER_SECOND = 26.0
+    AMBIENT_FLAKES_PER_SECOND = 8.0
     AMBIENT_SPEED_MIN = 22.0
     AMBIENT_SPEED_MAX = 48.0
-    AMBIENT_DRIFT_MAX = 7.0
+    AMBIENT_DRIFT_MAX = 10.0
 
     # Logo-forming flakes use the SAME vertical speed range as ambient snow.
     # Keeping only a separate drift amount lets us tune their final approach
     # without making their falling speed give them away.
-    TARGET_DRIFT_MAX = 2.5
+    # TARGET_DRIFT_MAX = 2.5
 
     # One target flake for roughly every STEP x STEP visible logo block.
     # 1 = very dense, 2 = default, 3+ = increasingly sparse.
@@ -115,6 +120,7 @@ class ChapterIntro:
         self.ambient_flakes = []
         self.logo_flakes = []
         self.pending_logo_flakes = []
+        self.logo_complete_at = self.LOGO_SNOW_START
 
         self.logo_pil = None
         self.heart_pil = None
@@ -258,10 +264,16 @@ class ChapterIntro:
 
         target_count = len(targets)
 
+        # Reset this every time the schedule is rebuilt.
+        self.logo_complete_at = self.LOGO_SNOW_START
+
+        flake_interval = 1.0 / self.LOGO_FLAKES_PER_SECOND
+
         for index, (target_x, target_y) in enumerate(targets):
+            # Same spawn height as ordinary snow.
             start_y = random.uniform(-12, -1)
 
-            # Exactly the same speed range as ordinary snow.
+            # Same vertical speed range as ordinary snow.
             speed = random.uniform(
                 self.AMBIENT_SPEED_MIN,
                 self.AMBIENT_SPEED_MAX,
@@ -270,38 +282,39 @@ class ChapterIntro:
             distance = max(1.0, target_y - start_y)
             travel_time = distance / max(speed, 1.0)
 
-            # Because targets were shuffled above, this gives us evenly-spaced
-            # spawn times without making the logo form in any obvious spatial order.
-            if target_count <= 1:
-                progress = 0.0
-            else:
-                progress = index / (target_count - 1)
-
-            # Latest moment this particular flake can enter and still reach
-            # its target before LOGO_FORM_END.
-            latest_start = self.LOGO_FORM_END - travel_time
-
-            latest_start = max(
-                self.LOGO_SNOW_START,
-                latest_start,
+            # Same random horizontal velocity range as ordinary snow.
+            vx = random.uniform(
+                -self.AMBIENT_DRIFT_MAX,
+                self.AMBIENT_DRIFT_MAX,
             )
 
+            # Exactly ~8 target flakes per second.
             start_time = (
                 self.LOGO_SNOW_START
-                + progress
-                * (latest_start - self.LOGO_SNOW_START)
+                + index * flake_interval
             )
 
-            # Tiny amount of randomness prevents the release timing from looking
-            # mechanically perfect, without allowing large clumps to form.
-            start_time += random.uniform(-0.08, 0.08)
+            # Small timing variation keeps the snowfall from looking clockwork.
+            # Keep this much smaller than flake_interval so it cannot create
+            # large bursts of target flakes.
+            jitter = flake_interval * 0.20
+
+            start_time += random.uniform(
+                -jitter,
+                jitter,
+            )
 
             start_time = max(
                 self.LOGO_SNOW_START,
-                min(start_time, latest_start),
+                start_time,
             )
 
-            start_x = target_x + random.uniform(-18, 18)
+            # Work backward from the target based on horizontal velocity.
+            # This allows the flake to drift naturally instead of homing.
+            start_x = target_x - (vx * travel_time)
+
+            # Slight imperfection makes its trajectory less suspicious.
+            start_x += random.uniform(-2.0, 2.0)
 
             self.pending_logo_flakes.append(
                 LogoFlake(
@@ -311,14 +324,24 @@ class ChapterIntro:
                     target_y=target_y,
                     start_time=start_time,
                     fall_speed=speed,
+                    vx=vx,
                     drift_phase=random.uniform(0, math.tau),
-                    drift_amount=random.uniform(
-                        0.25,
-                        self.TARGET_DRIFT_MAX,
-                    ),
+                    drift_amount=0.14,
                     size=self.SNOW_PARTICLE_SIZE,
                 )
             )
+
+            # Remember when the final target particle is expected to land.
+            arrival_time = start_time + travel_time
+
+            self.logo_complete_at = max(
+                self.logo_complete_at,
+                arrival_time,
+            )
+
+        self.pending_logo_flakes.sort(
+            key=lambda flake: flake.start_time
+        )
 
         self.pending_logo_flakes.sort(key=lambda flake: flake.start_time)
 
@@ -438,16 +461,19 @@ class ChapterIntro:
             if flake.settled:
                 continue
 
-            flake.drift_phase += dt * 2.5
+            # Move just like ordinary snow.
+            flake.drift_phase += dt * 2.0
 
-            # Correct horizontal error gradually, with a tiny snow-like sway.
-            x_error = flake.target_x - flake.x
-            correction = x_error * min(1.0, dt * 3.0)
-            sway = math.sin(flake.drift_phase) * flake.drift_amount * dt
-            flake.x += correction + sway
+            flake.x += (
+                flake.vx * dt
+                + math.sin(flake.drift_phase) * flake.drift_amount
+            )
+
             flake.y += flake.fall_speed * dt
 
             if flake.y >= flake.target_y:
+                # Only at the instant it lands do we lock it precisely
+                # onto its assigned logo pixel.
                 flake.x = flake.target_x
                 flake.y = flake.target_y
                 flake.settled = True
@@ -477,7 +503,17 @@ class ChapterIntro:
         self._update_ambient(dt, elapsed)
         self._update_logo_flakes(dt, elapsed)
 
-        if elapsed >= self.FADE_TO_BLACK_END:
+        hold_end = (
+            self.logo_complete_at
+            + self.LOGO_HOLD_TIME
+        )
+
+        fade_end = (
+            hold_end
+            + self.FADE_TO_BLACK_TIME
+        )
+
+        if elapsed >= fade_end:
             self.finish()
 
     # ==================================================
@@ -489,16 +525,31 @@ class ChapterIntro:
             progress = (
                 time.perf_counter() - self.skip_started_at
             ) / self.SKIP_FADE_TIME
-            return max(0.0, min(1.0, progress))
 
-        if elapsed <= self.LOGO_HOLD_END:
+            return max(
+                0.0,
+                min(1.0, progress),
+            )
+
+        hold_end = (
+            self.logo_complete_at
+            + self.LOGO_HOLD_TIME
+        )
+
+        fade_end = (
+            hold_end
+            + self.FADE_TO_BLACK_TIME
+        )
+
+        if elapsed <= hold_end:
             return 0.0
-        if elapsed >= self.FADE_TO_BLACK_END:
+
+        if elapsed >= fade_end:
             return 1.0
 
         return (
-            (elapsed - self.LOGO_HOLD_END)
-            / (self.FADE_TO_BLACK_END - self.LOGO_HOLD_END)
+            (elapsed - hold_end)
+            / self.FADE_TO_BLACK_TIME
         )
 
     @staticmethod

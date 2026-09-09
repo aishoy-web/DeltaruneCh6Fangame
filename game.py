@@ -77,8 +77,8 @@ class Game:
         self.load_dialogue()
         import ui_sprites
 
-        print("ui_sprites loaded from:", ui_sprites.__file__)
-        print("UISpriteSheet has get:", hasattr(UISpriteSheet, "get"))
+        # print("ui_sprites loaded from:", ui_sprites.__file__)
+        # print("UISpriteSheet has get:", hasattr(UISpriteSheet, "get"))
         self.ui_sprites = UISpriteSheet(self)
         self.hud = HUD(self)
         self.character_index = 0
