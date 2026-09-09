@@ -1635,14 +1635,14 @@ class UISpriteSheet:
             game
         )
 
-    def get(self, name):
+    def get(self, name, customScale=1.0):
         """
         Return a Tkinter PhotoImage of the requested UI
         sprite at the game's current fullscreen scale.
         """
 
         scale = float(
-            self.game.scale
+            self.game.scale * customScale
         )
 
         scale_key = round(

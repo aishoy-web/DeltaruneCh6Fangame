@@ -77,21 +77,21 @@ class FileMenu:
                     slot1_x,
                     slot1_y,
                     anchor="nw",
-                    image=self.game.ui_sprites.get("dialogue_box"),
+                    image=self.game.ui_sprites.get("dialogue_box",0.7),
                 )
         
         self.slot2_sprite = self.game.canvas.create_image(
                     slot2_x,
                     slot2_y,
                     anchor="nw",
-                    image=self.game.ui_sprites.get("dialogue_box"),
+                    image=self.game.ui_sprites.get("dialogue_box",0.7),
                 )
         
         self.slot3_sprite = self.game.canvas.create_image(
                     slot3_x,
                     slot3_y,
                     anchor="nw",
-                    image=self.game.ui_sprites.get("dialogue_box"),
+                    image=self.game.ui_sprites.get("dialogue_box",0.7),
                 )
 
     def render_static(self):

@@ -78,7 +78,6 @@ class Game:
         # screen display
         self.create_widgets()
         self.load_dialogue()
-        import ui_sprites
 
         # print("ui_sprites loaded from:", ui_sprites.__file__)
         # print("UISpriteSheet has get:", hasattr(UISpriteSheet, "get"))
@@ -548,18 +547,15 @@ class Game:
         elapsed = time.time() - self.escapePressTime
         
         if elapsed >= self.escapeKeyHoldDuration:
-            print("Condition met. Closing application.")
-            self.root.destroy()
+            self.end_program()
         else:
             # Re-check every 100 milliseconds
             self.root.after(100, self.quit_game_hold)
         
-        #add a label to the screen that says "Quitting..." when the escape key is held down
     def quit_game_release(self, event = None):
+        #"isEscapeHeld" removes quitting button   
         self.isEscapeHeld = False
         self.escapePressTime = None
-        
-        #remove quitting button
     def window_resized(self, event):
         if event.widget != self.root:
             return
@@ -615,6 +611,7 @@ class Game:
         )
         self.background_sprite = None
         self.player_sprite = None
+        self.quittingSprite = None
         self.fade_overlay = self.canvas.create_image(
             0,
             0,
