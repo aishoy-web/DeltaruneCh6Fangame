@@ -10,6 +10,9 @@ class AudioManager:
         music_path = BASE_DIR / "mus" / filename
         if self.current_music == filename:
             return  # Don't restart the same song
+        # print("Loading music:", music_path)
+        # with open(music_path, "rb") as file:
+            # print("Audio header:", file.read(12))
         pygame.mixer.music.load(music_path)
         pygame.mixer.music.set_volume(self.music_volume)
         loops = -1 if loop else 0

@@ -56,7 +56,7 @@ BASE_DIR = Path(__file__).parent
 # File select
 mainMenu = Room(
     name="mainMenu",
-    background="file_select_back.png",
+    background="sprites/intro/spr_giantdarkdoor.png",
     collisions = [],
     music="faint_glow.flac",
     interactable_objects = None,

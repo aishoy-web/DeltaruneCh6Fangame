@@ -1,9 +1,11 @@
 from importlib.resources import path
+import os
 import tkinter as tk
 import time
 import pygame
 import subprocess
 import sys
+import tempfile
 from PIL import Image, ImageTk, ImageDraw, ImageGrab
 from pathlib import Path
 from ui_sprites import MainFont
@@ -256,7 +258,7 @@ class ChapterSelect:
         self.chapter_index = 0
         self.footer_index = 0
         self.confirm_index = 0
-
+        self.handoff_pending = False
         self.star_photos = []
         self.chapters = []
         self.available_chapters = 6
@@ -267,6 +269,10 @@ class ChapterSelect:
         # ==================================================
         # Chapter launch transition
         # ==================================================
+
+        self.chapter_process = None
+        self.chapter_ready_file = None
+        self.handoff_job = None
 
         self.transition_job = None
         self.transition_start_time = None
@@ -3491,29 +3497,100 @@ class ChapterSelect:
 
         self.audio.stop_music()
 
-        if not CHAPTER6_ENTRY.is_file():
-            print(
-                "ERROR: Chapter 6 entry point not found:",
-                CHAPTER6_ENTRY
-            )
+        # -----------------------------------------------
+        # Leave Chapter Select as a completely black
+        # fullscreen loading curtain.
+        # -----------------------------------------------
+
+        self.canvas.delete("all")
+        self.canvas.configure(bg="black")
+
+        self.root.update_idletasks()
+
+        # -----------------------------------------------
+        # Create a temporary "ready" file path.
+        #
+        # chapter6.py will create this file only after
+        # Game has finished initializing and its first
+        # intro frame is ready.
+        # -----------------------------------------------
+
+        fd, ready_path = tempfile.mkstemp(
+            prefix="deltarune_ch6_ready_",
+            suffix=".tmp",
+        )
+
+        os.close(fd)
+
+        # Delete it immediately. We only wanted a unique path.
+        try:
+            os.remove(ready_path)
+        except OSError:
+            pass
+
+        self.chapter_ready_file = ready_path
+
+        # -----------------------------------------------
+        # Launch Chapter 6.
+        # -----------------------------------------------
+
+        self.chapter_process = subprocess.Popen(
+            [
+                sys.executable,
+                str(CHAPTER6_ENTRY),
+                "--ready-file",
+                ready_path,
+            ],
+            cwd=str(BASE_DIR),
+        )
+
+        # Keep THIS Tk mainloop alive while Chapter 6 loads.
+        self.poll_chapter_ready()
+    def destroy_after_handoff(self):
+        if not self.handoff_pending:
             return
+
+        self.handoff_pending = False
 
         try:
-            subprocess.Popen(
-                [
-                    sys.executable,
-                    str(CHAPTER6_ENTRY),
-                ],
-                cwd=str(BASE_DIR),
-            )
-        except OSError as exc:
-            print(
-                "ERROR: Could not launch Chapter 6:",
-                exc
-            )
+            self.root.destroy()
+        except tk.TclError:
+            pass
+    def poll_chapter_ready(self):
+        if self.chapter_ready_file is None:
+            return
+        # Chapter 6 says it is ready.
+        if os.path.exists(self.chapter_ready_file):
+            try:
+                os.remove(self.chapter_ready_file)
+            except OSError:
+                pass
+
+            self.chapter_ready_file = None
+            self.handoff_job = None
+
+            # NOW the black Chapter Select curtain can disappear.
+            self.root.destroy()
             return
 
-        self.root.destroy()
+        # If Chapter 6 crashed before becoming ready, don't
+        # leave the player trapped on a permanent black screen.
+        if (
+            self.chapter_process is not None
+            and self.chapter_process.poll() is not None
+        ):
+            print(
+                "Chapter 6 exited before signaling readiness. "
+                f"Exit code: {self.chapter_process.returncode}"
+            )
+
+            self.root.destroy()
+            return
+
+        self.handoff_job = self.root.after(
+            16,
+            self.poll_chapter_ready,
+        )
 
     # ======================================================
     # UPDATE

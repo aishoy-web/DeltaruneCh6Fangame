@@ -40,14 +40,17 @@ uiSpritesheetPath = BASE_DIR/"sprites"/"ui"/"menu+HUD_spritesheet.png" #unbeliev
 
 
 class Game:
-    def __init__(self, startup = None):
+    def __init__(self, startup = None, start_hidden = False):
         # INITALIZATION
         # relating to screen size
         self.startup = startup
+        self.start_hidden = start_hidden
         # Startup screens use explicit game states so the same Tk window
         # can move through intro -> legend/logo -> file select.
         self.state = "boot"
         self.root = tk.Tk()
+        if self.start_hidden:
+            self.root.withdraw()
         icon_path = BASE_DIR / "sprites" / "assets" / "taskbar_logo.png"
         icon = ImageTk.PhotoImage(Image.open(icon_path))
         self.root.iconphoto(True, icon)
@@ -173,7 +176,7 @@ class Game:
         ]
         
         # Create basic game objects
-        self.load_room("mainMenu")
+        self.load_room("mainMenu", play_music=False)
         self.player = Player(self)
         self.menu = Menu(self)
         # self.chapter_select = ChapterSelect(self)
@@ -186,8 +189,10 @@ class Game:
         # Do not jump straight to File Select. Chapter 6 now owns its
         # startup flow inside this same Game process.
         self._set_file_menu_visible(False)
-        self.start_chapter_startup()
+        self.startup_started = False
         self.update()
+        if not self.start_hidden:
+            self.show_window()
         '''self.typing = True
         with open(BASE_DIR / "eng.json", encoding="utf-8") as f:
             self.dialogue_data = json.load(f)
@@ -201,6 +206,32 @@ class Game:
         "legend",
         "chapter_logo",
     }
+
+    def show_window(self):
+
+        self.root.deiconify()
+
+        self.fullscreen = True
+        self.root.attributes(
+            "-fullscreen",
+            True,
+        )
+
+        self.root.update_idletasks()
+
+        self.on_resize()
+
+        if not self.startup_started:
+            self.startup_started = True
+            self.start_chapter_startup()
+
+        if self.active_startup_screen is not None:
+            self.active_startup_screen.render()
+
+        # Force Windows/Tk to actually create and paint the window
+        # before chapter6.py signals readiness.
+        self.root.update_idletasks()
+        self.root.update()
 
     def launch_chapter(self, chapter):
         if chapter != 6:
@@ -342,38 +373,32 @@ class Game:
         self.start_file_select()
 
     def start_file_select(self, fade_in=False):
-        # Install the black Game overlay before removing the intro. This keeps
-        # the handoff black with no one-frame flash of the File Select screen.
+
         if fade_in:
             self.fade_alpha = 255
             self.file_select_fade_active = True
-            self.file_select_fade_started_at = time.perf_counter()
+            self.file_select_fade_started_at = (
+                time.perf_counter()
+            )
         else:
             self.file_select_fade_active = False
             self.file_select_fade_started_at = None
             self.fade_alpha = 0
 
         self._hide_active_startup_screen()
+
         self.state = "file_select"
 
-        try:
-            self.audio.stop_music()
-        except Exception:
-            pass
-
-        # Let FileMenu initialize/refresh itself if it exposes an open()
-        # method, then make every known FileMenu canvas item visible.
         open_file_menu = getattr(
             self.file_menu,
             "open",
-            None
+            None,
         )
 
         if callable(open_file_menu):
             try:
                 open_file_menu()
             except TypeError:
-                # Some early FileMenu revisions may not use open() yet.
                 pass
 
         self._set_file_menu_visible(True)
@@ -384,6 +409,14 @@ class Game:
             pass
 
         self._set_file_menu_visible(True)
+
+        # Start File Select music HERE.
+        file_select_music = ROOMS["mainMenu"].music
+        # print("FILE SELECT MUSIC:", repr(file_select_music))
+        if file_select_music:
+            self.audio.play_music(
+                file_select_music
+            )
 
         if fade_in:
             self.render_fade()
@@ -588,10 +621,34 @@ class Game:
             anchor = "nw"
         )
         self.fade_photo = None
-    def load_room(self, room_id, facing_direction = None):
-        room = ROOMS[room_id]   
+    def load_room(self, room_id, facing_direction = None, play_music = True):
+        room = ROOMS[room_id]
         self.room = room
-        background_path = BASE_DIR/"room_backgrounds"/room.background
+
+        background_ref = Path(room.background)
+
+        if background_ref.is_absolute():
+            # An explicitly absolute path.
+            background_path = background_ref
+
+        elif len(background_ref.parts) > 1:
+            # A project-relative path, for example:
+            # "sprites/intro/spr_giantdarkdoor.png"
+            background_path = BASE_DIR / background_ref
+
+        else:
+            # Existing rooms can continue supplying only a filename.
+            background_path = (
+                BASE_DIR
+                / "room_backgrounds"
+                / background_ref
+            )
+
+        if not background_path.exists():
+            raise FileNotFoundError(
+                f"Could not find background for room '{room_id}': "
+                f"{background_path}"
+            )
 
         # print(f"Loaded room: {room.name}") #Debug for room loading, keep this commented out unless testing room loading.
 
@@ -611,7 +668,7 @@ class Game:
                 self.player.facing = facing_direction
                 self.player.animation.play(facing_direction)
                 self.player.animation.stop()
-        if room.music:
+        if play_music and room.music:
             self.audio.play_music(room.music)
     def check_room_transitions(self):
         for exit in self.room.exits:
