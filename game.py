@@ -107,9 +107,15 @@ class Game:
         self.was_moving = False
         self.keys_pressed = set()
         self.direction_keys = []
-        self.escapeKeyHoldDuration = 2.0 #for closing the game by holding it down
-        self.escapePressTime = None
-        self.isEscapeHeld = False
+        #obj_time quitting behavior variables
+        self.quit_timer = 0.0 #for closing the game by holding it down
+        self.escape_held = False
+        self.quit_last_update = time.perf_counter()
+
+        # Brief delay so the final frame of the quit animation can play
+        self.quit_finishing = False
+        self.quit_finish_started = None
+        self.quit_final_hold = 0.15
         
         #other init
         self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
@@ -128,17 +134,48 @@ class Game:
         self.audio = AudioManager()
         self.progress = ProgressTracker()
         self.active_startup_screen = None
-        self.quitAnimated = AnimatedSprite( #escape text init
-                    uiSpritesheetPath,
-                    cell_width=87,
-                    cell_height=10,
-                    sprite_width=87,
-                    sprite_height=10,
-                    sheet_offset_x=6,
-                    sheet_offset_y = 430,
-                    animations={"quit": (0, 0, 4)},
-                    animation_speed = 2.0
-                ) 
+        # ======================================================
+        # QUITTING... sprite
+        # Equivalent to spr_quitmessage
+        # ======================================================
+
+        quit_sheet = Image.open(
+            uiSpritesheetPath
+        ).convert("RGBA")
+
+        self.quit_frames = []
+
+        QUIT_X = 6
+        QUIT_Y = 430
+        QUIT_WIDTH = 87
+        QUIT_HEIGHT = 10
+        QUIT_Y_SPACING = 12
+
+        TRANSPARENT_COLOR = (210, 129, 252)
+
+        for i in range(5):
+            top = QUIT_Y + i * QUIT_Y_SPACING
+
+            frame = quit_sheet.crop(
+                (
+                    QUIT_X,
+                    top,
+                    QUIT_X + QUIT_WIDTH,
+                    top + QUIT_HEIGHT,
+                )
+            ).convert("RGBA")
+
+            pixels = frame.load()
+
+            for y in range(frame.height):
+                for x in range(frame.width):
+                    r, g, b, a = pixels[x, y]
+
+                    if (r, g, b) == TRANSPARENT_COLOR:
+                        pixels[x, y] = (r, g, b, 0)
+
+            self.quit_frames.append(frame)
+
         self.quit_photo = None
         
         # file select
@@ -519,7 +556,7 @@ class Game:
         self.root.attributes("-fullscreen", True)
         
         self.root.bind("<F11>",self.toggle_fullscreen)
-        self.root.bind("<Escape>",self.quit_game)
+        # self.root.bind("<Escape>",self.quit_game)
         self.root.bind("<Configure>", self.window_resized)
     # f11 toggles the fullscreen
     def toggle_fullscreen(self, event = None):
@@ -532,38 +569,84 @@ class Game:
         self.root.attributes("-fullscreen", False)
         self.on_resize()
     #quit the game by holding down the escape key for a few seconds, to prevent accidental quitting
-    def quit_game(self, event = None):
-        if self.isEscapeHeld:
-            return
+    # def quit_game(self, event = None):
+    #     if self.isEscapeHeld:
+    #         return
             
-        self.isEscapeHeld = True
-        self.escapePressTime = time.time()
-        self.quitAnimated.play("quit")
+    #     self.isEscapeHeld = True
+    #     self.escapePressTime = time.time()
+    #     # self.quitAnimated.play("quit")
         
-        # Start checking the hold condition
-        self.quit_game_hold()
-    def quit_game_hold(self, event = None):
-        if not self.isEscapeHeld:
-            return
+    #     # Start checking the hold condition
+    #     self.quit_game_hold()
+    # def quit_game_hold(self, event = None):
+    #     if not self.isEscapeHeld:
+    #         return
 
-        elapsed = time.time() - self.escapePressTime
+    #     elapsed = time.time() - self.escapePressTime
         
-        if elapsed >= self.escapeKeyHoldDuration:
-            self.end_program()
+    #     if elapsed >= self.escapeKeyHoldDuration:
+    #         self.end_program()
+    #     else:
+    #         # Re-check every 100 milliseconds
+    #         self.root.after(100, self.quit_game_hold)
+        
+    # def quit_game_release(self, event = None):
+    #     #"isEscapeHeld" removes quitting button   
+    #     self.isEscapeHeld = False
+    #     self.escapePressTime = None
+    #     self.quitAnimated.stop()
+    #     if self.quittingSprite is not None:
+    #         self.canvas.itemconfigure(
+    #             self.quittingSprite,
+    #             state="hidden"
+    #         )
+    def update_quit(self):
+        """
+        Python equivalent of obj_time's Escape/quit_timer logic,
+        with a tiny final-frame hold before closing.
+        """
+
+        now = time.perf_counter()
+
+        dt = now - self.quit_last_update
+        self.quit_last_update = now
+
+        dt = min(dt, 0.1)
+
+        # --------------------------------------------------
+        # Final QUITTING... frame
+        # --------------------------------------------------
+        if self.quit_finishing:
+            self.quit_timer = 30.0
+
+            if (
+                now - self.quit_finish_started
+                >= self.quit_final_hold
+            ):
+                self.end_program()
+                return False
+
+            return True
+
+        # --------------------------------------------------
+        # Normal obj_time behavior
+        # --------------------------------------------------
+        if self.escape_held:
+            if self.quit_timer < 0:
+                self.quit_timer = 0
+
+            self.quit_timer += dt * 30.0
+
+            if self.quit_timer >= 30:
+                self.quit_timer = 30.0
+                self.quit_finishing = True
+                self.quit_finish_started = now
+
         else:
-            # Re-check every 100 milliseconds
-            self.root.after(100, self.quit_game_hold)
-        
-    def quit_game_release(self, event = None):
-        #"isEscapeHeld" removes quitting button   
-        self.isEscapeHeld = False
-        self.escapePressTime = None
-        self.quitAnimated.stop()
-        if self.quittingSprite is not None:
-            self.canvas.itemconfigure(
-                self.quittingSprite,
-                state="hidden"
-            )
+            self.quit_timer -= dt * 60.0
+
+        return True
     def window_resized(self, event):
         if event.widget != self.root:
             return
@@ -756,9 +839,6 @@ class Game:
         # PLACE_MENU.
         if self.state == "file_select":
             self._set_file_menu_visible(True)
-            if self.isEscapeHeld:
-                self.quitAnimated.update()
-                self.renderQuit()
             self.render_fade()
             return
 
@@ -767,9 +847,9 @@ class Game:
         #special renders, like the player, the menu, dialog, etc
         if hasattr(self, "player"):
             self.player.render()
-        if self.isEscapeHeld: #if holding the button then display it
-            self.quitAnimated.update()
-            self.renderQuit()
+        # if self.isEscapeHeld: #if holding the button then display it
+        #     self.quitAnimated.update()
+        #     self.renderQuit()
         if self.menu.visible:
             self.menu.render_dynamic()
             self.canvas.tag_raise("menu")
@@ -783,39 +863,118 @@ class Game:
         self.render_fade()
 
     def renderQuit(self):
-        #get the frame, resize it, and then render it to the canvas
-        frame = self.quitAnimated.get_frame()
+        """
+        Equivalent to:
+
+        if (quit_timer >= 1)
+            draw_sprite_ext(
+                spr_quitmessage,
+                quit_timer / 7,
+                4, 4,
+                2, 2,
+                0,
+                c_white,
+                quit_timer / 15
+            );
+        """
+
+        if self.quit_timer < 1:
+            if self.quittingSprite is not None:
+                self.canvas.itemconfigure(
+                    self.quittingSprite,
+                    state="hidden"
+                )
+            return
+
+        # ---------------------------------------------
+        # GameMaker:
+        #     image_index = quit_timer / 7
+        #
+        # Fractional sprite indexes effectively resolve
+        # to their corresponding animation frame.
+        # ---------------------------------------------
+        frame_index = int(self.quit_timer / 7)
+
+        frame_index = max(
+            0,
+            min(frame_index, len(self.quit_frames) - 1)
+        )
+
+        frame = self.quit_frames[frame_index].copy()
+
+        # ---------------------------------------------
+        # GameMaker:
+        #     image_alpha = quit_timer / 15
+        # ---------------------------------------------
+        alpha = max(
+            0.0,
+            min(1.0, self.quit_timer / 15.0)
+        )
+
+        if alpha < 1.0:
+            alpha_channel = frame.getchannel("A")
+
+            alpha_channel = alpha_channel.point(
+                lambda value: round(value * alpha)
+            )
+
+            frame.putalpha(alpha_channel)
+
+        # ---------------------------------------------
+        # DELTARUNE draws this sprite x2 at 640x480.
+        #
+        # Our logical framebuffer is 320x240, so the
+        # native 87x10 sprite already represents that
+        # same apparent size.
+        # ---------------------------------------------
+        scaled_width = max(
+            1,
+            round(frame.width * self.scale)
+        )
+
+        scaled_height = max(
+            1,
+            round(frame.height * self.scale)
+        )
+
         scaled = frame.resize(
             (
-                int(frame.width * self.scale),
-                int(frame.height * self.scale),
+                scaled_width,
+                scaled_height
             ),
-            Image.Resampling.NEAREST,
+            Image.Resampling.NEAREST
         )
-        
-        #resized image
-        self.quit_photo = ImageTk.PhotoImage(scaled)
-        canvas_x, canvas_y = self.ui_to_screen(4, 1)
 
-        #if its not existant, then start with it, else wise update
+        self.quit_photo = ImageTk.PhotoImage(scaled)
+
+        # GameMaker uses (4,4) in a 640x480 GUI.
+        # Equivalent position in our 320x240 logical viewport:
+        canvas_x, canvas_y = self.ui_to_screen(2, 2)
+
         if self.quittingSprite is None:
             self.quittingSprite = self.canvas.create_image(
                 canvas_x,
                 canvas_y,
                 image=self.quit_photo,
                 anchor="nw",
+                tags=("quit_message",)
             )
         else:
             self.canvas.coords(
                 self.quittingSprite,
                 canvas_x,
-                canvas_y,
+                canvas_y
             )
+
             self.canvas.itemconfigure(
                 self.quittingSprite,
                 image=self.quit_photo,
-                state="normal",
+                state="normal"
             )
+
+        # obj_time's GUI drawing should remain above the
+        # room, menu, dialogue, startup screens, and fades.
+        self.canvas.tag_raise(self.quittingSprite)
     def render_fade(self):
         if self.fade_alpha <= 0:
             self.canvas.itemconfigure(
@@ -1039,13 +1198,16 @@ class Game:
     def bind_keys(self):
         self.root.bind("<KeyPress>", self.key_press)
         self.root.bind("<KeyRelease>", self.key_release)
-        self.root.bind("<KeyRelease-Escape>", self.quit_game_release)
+        # self.root.bind("<KeyRelease-Escape>", self.quit_game_release)
         self.root.bind("<space>", self.advance_dialogue)
         self.root.bind("<space>", self.interact)
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         key = event.keysym
 
+        if key == "Escape":
+            self.escape_held = True
+            return
         if self.transitioning:
             return
 
@@ -1112,6 +1274,9 @@ class Game:
             self.direction_keys.append(key)
 
     def key_release(self, event):
+        if event.keysym == "Escape":
+            self.escape_held = False
+            return
         self.keys_pressed.discard(event.keysym)
         if event.keysym in self.direction_keys:
             self.direction_keys.remove(event.keysym)
@@ -1272,8 +1437,12 @@ class Game:
         #yeah thats kinda it just call this function to close the game lol
     #Main Update function
     def update(self):
+        #obj_time exists outside of individual room/game logic
+        if not self.update_quit():
+            return
         if self.transitioning:
             self.update_transition()
+            self.renderQuit()
             self.root.after(16, self.update)
             return
 
@@ -1291,7 +1460,12 @@ class Game:
                 if self.active_startup_screen is screen:
                     screen.render()
 
-            frame_ms = getattr(screen, "FRAME_MS", 16) if screen is not None else 16
+            self.renderQuit()
+            frame_ms = (
+                getattr(screen, "FRAME_MS", 16)
+                if screen is not None
+                else 16
+            )
             self.root.after(frame_ms, self.update)
             return
 
@@ -1317,6 +1491,8 @@ class Game:
                     self.render_fade()
 
             self.render_dynamic()
+            self.renderQuit()
+
             self.root.after(32, self.update)
             return
 
@@ -1410,7 +1586,7 @@ class Game:
                 self.dialogue_box.update_position()
 
             self.render_dynamic()
-
+        self.renderQuit()
         self.root.after(32, self.update) # Framerate, lower number = higher framerate
 
     def run(self):
