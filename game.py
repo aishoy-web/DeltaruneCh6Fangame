@@ -9,7 +9,7 @@ from PIL import Image, ImageTk
 from ui_sprites import UISpriteSheet
 from hud import HUD
 from player import Player
-from filemenu import FileMenu
+from fileselect import FileMenu
 from dialogue_box import DialogueBox
 import json
 from audiomanager import AudioManager
