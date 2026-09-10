@@ -139,6 +139,7 @@ class Game:
                     animations={"quit": (0, 0, 4)},
                     animation_speed = 2.0
                 ) 
+        self.quit_photo = None
         
         # file select
         # Keep track of the Canvas items FileMenu creates so Game can hide
@@ -537,6 +538,7 @@ class Game:
             
         self.isEscapeHeld = True
         self.escapePressTime = time.time()
+        self.quitAnimated.play("quit")
         
         # Start checking the hold condition
         self.quit_game_hold()
@@ -556,6 +558,12 @@ class Game:
         #"isEscapeHeld" removes quitting button   
         self.isEscapeHeld = False
         self.escapePressTime = None
+        self.quitAnimated.stop()
+        if self.quittingSprite is not None:
+            self.canvas.itemconfigure(
+                self.quittingSprite,
+                state="hidden"
+            )
     def window_resized(self, event):
         if event.widget != self.root:
             return
@@ -748,6 +756,9 @@ class Game:
         # PLACE_MENU.
         if self.state == "file_select":
             self._set_file_menu_visible(True)
+            if self.isEscapeHeld:
+                self.quitAnimated.update()
+                self.renderQuit()
             self.render_fade()
             return
 
@@ -756,12 +767,9 @@ class Game:
         #special renders, like the player, the menu, dialog, etc
         if hasattr(self, "player"):
             self.player.render()
-
         if self.isEscapeHeld: #if holding the button then display it
             self.quitAnimated.update()
             self.renderQuit()
-
-
         if self.menu.visible:
             self.menu.render_dynamic()
             self.canvas.tag_raise("menu")
@@ -776,18 +784,38 @@ class Game:
 
     def renderQuit(self):
         #get the frame, resize it, and then render it to the canvas
-        frame = self.animation.get_frame()
-        scaled = frame.resize((int(frame.width * self.game.scale),int(frame.height * self.game.scale)),Image.Resampling.NEAREST)
-        self.photo = ImageTk.PhotoImage(scaled)
-        canvas_x, canvas_y = self.game.game_to_screen(self.x, self.y)
+        frame = self.quitAnimated.get_frame()
+        scaled = frame.resize(
+            (
+                int(frame.width * self.scale),
+                int(frame.height * self.scale),
+            ),
+            Image.Resampling.NEAREST,
+        )
         
-        self.game.canvas.coords(
-            self.canvas_sprite,
-            canvas_x,
-            canvas_y)
-        self.game.canvas.itemconfig(
-            self.canvas_sprite,
-            image=self.photo) 
+        #resized image
+        self.quit_photo = ImageTk.PhotoImage(scaled)
+        canvas_x, canvas_y = self.ui_to_screen(4, 1)
+
+        #if its not existant, then start with it, else wise update
+        if self.quittingSprite is None:
+            self.quittingSprite = self.canvas.create_image(
+                canvas_x,
+                canvas_y,
+                image=self.quit_photo,
+                anchor="nw",
+            )
+        else:
+            self.canvas.coords(
+                self.quittingSprite,
+                canvas_x,
+                canvas_y,
+            )
+            self.canvas.itemconfigure(
+                self.quittingSprite,
+                image=self.quit_photo,
+                state="normal",
+            )
     def render_fade(self):
         if self.fade_alpha <= 0:
             self.canvas.itemconfigure(
@@ -1011,6 +1039,7 @@ class Game:
     def bind_keys(self):
         self.root.bind("<KeyPress>", self.key_press)
         self.root.bind("<KeyRelease>", self.key_release)
+        self.root.bind("<KeyRelease-Escape>", self.quit_game_release)
         self.root.bind("<space>", self.advance_dialogue)
         self.root.bind("<space>", self.interact)
         self.root.bind("<Configure>", self.on_resize)
@@ -1287,6 +1316,7 @@ class Game:
                     self.fade_alpha = 0
                     self.render_fade()
 
+            self.render_dynamic()
             self.root.after(32, self.update)
             return
 
