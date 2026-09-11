@@ -80,6 +80,7 @@ CHAPTER_LABEL_Y = 4
 
 # Row text.
 FILE_TEXT_X = BOX_X1 + 25
+FILE_PLACE_X = BOX_X1 + 10
 FILE_TIME_X = BOX_X1 + 180
 
 # Footer.
@@ -90,8 +91,8 @@ FOOTER_TOP_Y = 190
 FOOTER_BOTTOM_Y = 210
 
 # Heart targets copied from DEVICE_MENU Draw.
-HEART_FILE_X = 65
-HEART_FILE_Y = 72
+HEART_FILE_X = 69.5
+HEART_FILE_Y = 76
 HEART_FILE_STEP = YL + YS  # 45
 
 HEART_CANCEL_X = 40
@@ -136,7 +137,7 @@ SPRITES_DIR = BASE_DIR / "sprites"
 #     [Chapter 5 END]
 #
 # Set e.g. CHAPTER_5_END_LOCATION = "Your Room" later if desired.
-CHAPTER_5_END_LOCATION = "test"
+CHAPTER_5_END_LOCATION = "Outside Closet"
 
 # ------------------------------------------------------------
 # Colors
@@ -1627,7 +1628,7 @@ class FileSelect:
                     self._draw_text(
                         f"row_{i}_place",
                         place,
-                        FILE_TEXT_X,
+                        FILE_PLACE_X,
                         y1 + 22,
                         color=color,
                     )
