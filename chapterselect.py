@@ -8,7 +8,7 @@ import sys
 import tempfile
 from PIL import Image, ImageTk, ImageDraw, ImageGrab
 from pathlib import Path
-from ui_sprites import MainFont
+from ui_sprites import MainFont, JaMainFont
 from audiomanager import AudioManager
 from progress import ProgressTracker
 
@@ -58,12 +58,12 @@ CURSOR_Y_OFFSET = 8.5
 
 # Footer
 FOOTER_QUIT_X = 119
-FOOTER_LANGUAGE_X = 165
+FOOTER_LANGUAGE_X = 195
 FOOTER_Y = 224.5
 
 # Copyright / version information
 FOOTER_INFO_X = 8
-FOOTER_INFO_Y = 218
+FOOTER_INFO_Y = 217
 
 # Independent scale for copyright information.
 # This is multiplied by the normal viewport scale.
@@ -250,6 +250,7 @@ class ChapterSelect:
         self.offset_x = 0
         self.offset_y = 0
         self.main_font = MainFont(self)
+        self.ja_main_font = JaMainFont(self)
         self.audio = AudioManager()
         self.progress = ProgressTracker()
         self.main_font_images = {}
@@ -2410,7 +2411,7 @@ class ChapterSelect:
             language_color
         )
 
-        language_image = self.main_font.render(
+        language_image = self.ja_main_font.render(
             "日本語",
             color=language_color
         )
@@ -2788,6 +2789,7 @@ class ChapterSelect:
 
         self.show()
         self.main_font.clear_cache()
+        self.ja_main_font.clear_cache()
         self.render()
 
         if self.entrance_job is not None:
@@ -3640,6 +3642,7 @@ class ChapterSelect:
 
         # Avoid retaining every intermediate faded text color.
         self.main_font.clear_cache()
+        self.ja_main_font.clear_cache()
         self.render()
 
         if animation_finished:
@@ -3688,6 +3691,7 @@ class ChapterSelect:
         # During the animation MainFont would otherwise keep
         # every intermediate fade color in its cache.
         self.main_font.clear_cache()
+        self.ja_main_font.clear_cache()
 
         self.render()
 

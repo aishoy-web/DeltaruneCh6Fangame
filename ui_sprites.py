@@ -19,6 +19,10 @@ MAIN_FONT_PATH = (
     BASE_DIR / "sprites" / "ui" / "fnt_main.png"
 )
 
+JA_MAIN_FONT_PATH = (
+    BASE_DIR / "sprites" / "ui" / "fnt_ja_main.png"
+)
+
 
 class SmallFont:
     """
@@ -1539,6 +1543,86 @@ class MainFont:
     def clear_cache(self):
         self.cache.clear()
 
+
+class JaMainFont(MainFont):
+    """
+    Renderer for Deltarune's fnt_ja_main bitmap font.
+
+    It uses the same glyph-table format and render interface
+    as MainFont:
+
+        {
+            "x": atlas x,
+            "y": atlas y,
+            "w": glyph width,
+            "h": glyph height,
+            "offset": vertical draw offset,
+            "shift": horizontal advance,
+        }
+
+    The Japanese glyphs currently needed by the UI are
+    mapped here. Additional fnt_ja_main glyphs can be added
+    to GLYPHS using the same format.
+    """
+
+    GLYPHS = {
+        # ------------------------------------------
+        # Space
+        # ------------------------------------------
+
+        " ": {
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "offset": 0,
+            "shift": 7,
+        },
+
+        # ------------------------------------------
+        # Japanese glyphs currently used by the UI
+        # ------------------------------------------
+
+        "日": {
+            "x": 820,
+            "y": 225,
+            "w": 9,
+            "h": 12,
+            "offset": 1,
+            "shift": 14,
+        },
+
+        "本": {
+            "x": 386,
+            "y": 241,
+            "w": 13,
+            "h": 14,
+            "offset": 0,
+            "shift": 14,
+        },
+
+        "語": {
+            "x": 274,
+            "y": 377,
+            "w": 13,
+            "h": 14,
+            "offset": 0,
+            "shift": 14,
+        },
+    }
+
+    def __init__(self, game):
+        self.game = game
+
+        # Open Japanese main font atlas.
+        self.mnFont = Image.open(
+            JA_MAIN_FONT_PATH
+        ).convert("RGBA")
+
+        self.glyphs = {}
+
+        self.cache = {}
+
 class UISpriteSheet:
 
     def __init__(self, game):
@@ -1641,6 +1725,10 @@ class UISpriteSheet:
         )
 
         self.main_font = MainFont(
+            game
+        )
+
+        self.ja_main_font = JaMainFont(
             game
         )
 
@@ -1748,3 +1836,4 @@ class UISpriteSheet:
 
         self.small_font.clear_cache()
         self.main_font.clear_cache()
+        self.ja_main_font.clear_cache()

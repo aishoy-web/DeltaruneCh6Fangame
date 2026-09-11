@@ -11,7 +11,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageColor, ImageDraw, ImageTk
 
 from progress import ProgressTracker
-from ui_sprites import MainFont
+from ui_sprites import MainFont, JaMainFont
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -80,7 +80,7 @@ CHAPTER_LABEL_Y = 4
 
 # Row text.
 FILE_TEXT_X = BOX_X1 + 25
-FILE_PLACE_X = BOX_X1 + 20
+FILE_PLACE_X = BOX_X1 + 25
 FILE_TIME_X = BOX_X1 + 180
 
 # Footer.
@@ -107,6 +107,8 @@ GIANT_DOOR_ORIGIN_Y = 0
 
 GIANT_DOOR_SCALE_X = 2.0
 GIANT_DOOR_SCALE_Y = 2.0
+
+FILE_BOX_ALPHA = 128 #Integers only
 
 # ------------------------------------------------------------
 # Audio
@@ -235,6 +237,7 @@ class FileSelect:
 
         self.progress = ProgressTracker()
         self.main_font = MainFont(game)
+        self.ja_main_font = JaMainFont(game)
 
         self.visible = False
         self.active = False
@@ -1197,25 +1200,82 @@ class FileSelect:
             (0, 0, 0, 255),
         )
 
+        # --------------------------------------------------
+        # Background
+        # --------------------------------------------------
+
         if self.subtype == 0:
             self._draw_subtype0_background(frame)
         else:
             self._draw_subtype1_background(frame)
 
-        # Draw FILE boxes directly into the same logical framebuffer.
-        draw = ImageDraw.Draw(frame, "RGBA")
+        # --------------------------------------------------
+        # Translucent FILE box fills
+        # --------------------------------------------------
 
-        col_a, col_b, col_plus = self._colors()
-        prev_menu = self._previous_menu_for_draw()
+        box_overlay = Image.new(
+            "RGBA",
+            (UI_WIDTH, UI_HEIGHT),
+            (0, 0, 0, 0),
+        )
+
+        box_draw = ImageDraw.Draw(
+            box_overlay,
+            "RGBA",
+        )
 
         for i in range(3):
-            y1 = BOX_START_Y + ((YL + YS) * i)
+            y1 = BOX_START_Y + (
+                (YL + YS) * i
+            )
+
             y2 = y1 + YL - 1
 
-            draw.rectangle(
-                (BOX_X1, y1, BOX_X1 + XL, y2),
-                fill=(0, 0, 0, 128),
+            box_draw.rectangle(
+                (
+                    BOX_X1,
+                    y1,
+                    BOX_X1 + XL,
+                    y2,
+                ),
+                fill=(
+                    0,
+                    0,
+                    0,
+                    FILE_BOX_ALPHA,
+                ),
             )
+
+        # THIS was missing.
+        # Blend the translucent black boxes over the
+        # already-rendered background.
+        frame.alpha_composite(
+            box_overlay
+        )
+
+        # --------------------------------------------------
+        # FILE box borders
+        # --------------------------------------------------
+
+        draw = ImageDraw.Draw(
+            frame,
+            "RGBA",
+        )
+
+        col_a, col_b, col_plus = (
+            self._colors()
+        )
+
+        prev_menu = (
+            self._previous_menu_for_draw()
+        )
+
+        for i in range(3):
+            y1 = BOX_START_Y + (
+                (YL + YS) * i
+            )
+
+            y2 = y1 + YL - 1
 
             color = col_a
 
@@ -1229,16 +1289,26 @@ class FileSelect:
                 MENU_COPY_TARGET,
                 MENU_COPY_OVERWRITE,
             ):
-                if self.menu_coord[MENU_COPY_SOURCE] == i:
+                if (
+                    self.menu_coord[
+                        MENU_COPY_SOURCE
+                    ]
+                    == i
+                ):
                     color = col_plus
 
             if (
                 self.menu_no == MENU_ERASE_FINAL
-                and self.menu_coord[MENU_ERASE_SOURCE] == i
+                and self.menu_coord[
+                    MENU_ERASE_SOURCE
+                ]
+                == i
             ):
                 color = RED
 
-            rgb = self._hex_to_rgb(color)
+            rgb = self._hex_to_rgb(
+                color
+            )
 
             draw.rectangle(
                 (
@@ -1247,15 +1317,22 @@ class FileSelect:
                     BOX_X1 + XL + 1,
                     y2 + 1,
                 ),
-                outline=(*rgb, 255),
+                outline=(
+                    *rgb,
+                    255,
+                ),
                 width=2,
             )
 
-        # Critical difference from the old implementation:
-        # text and soul are part of this SAME 320x240 image.  There are no
-        # independent Canvas text images for another Game render pass to cover.
+        # --------------------------------------------------
+        # Text + soul
+        # --------------------------------------------------
+
         self._render_text_ui(frame)
-        self._render_heart_into_frame(frame)
+
+        self._render_heart_into_frame(
+            frame
+        )
 
         return frame
 
@@ -1282,6 +1359,7 @@ class FileSelect:
         text,
         color=WHITE,
         scale_multiplier=1.0,
+        font = "main",
     ):
         """Render MainFont directly to a native-resolution PIL image.
 
@@ -1303,14 +1381,21 @@ class FileSelect:
             text,
             rgb,
             round(scale_multiplier, 4),
+            font,
         )
 
         cached = self._pil_text_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        glyph_table = getattr(MainFont, "GLYPHS", {})
-        atlas = getattr(self.main_font, "mnFont", None)
+        if font == "ja":
+            font_renderer = self.ja_main_font
+            glyph_table = JaMainFont.GLYPHS
+        else:
+            font_renderer = self.main_font
+            glyph_table = MainFont.GLYPHS
+
+        atlas = font_renderer.mnFont
 
         if atlas is None or not glyph_table:
             # Transparent fallback. This should only be reached if ui_sprites
@@ -1453,6 +1538,7 @@ class FileSelect:
         anchor="nw",
         shadow=True,
         scale_multiplier=None,
+        font = "main",
     ):
         """Composite text directly into the current logical framebuffer."""
         target = self._logical_text_target
@@ -1469,6 +1555,7 @@ class FileSelect:
             text,
             color=color,
             scale_multiplier=multiplier,
+            font=font,
         )
 
         px, py = self._anchor_position(
@@ -1483,6 +1570,7 @@ class FileSelect:
                 text,
                 color=BLACK,
                 scale_multiplier=multiplier,
+                font=font
             )
             sx, sy = self._anchor_position(
                 x + 1,
@@ -1824,7 +1912,7 @@ class FileSelect:
                     210,
                     5,
                 ),
-                ("日本語", 136, 210, 6),
+                ("日本語", 137, 210, 6),
                 ("Chapter Select", 204, 190, 7),
                 ("End Program", 204, 210, 8),
             )
@@ -1841,12 +1929,19 @@ class FileSelect:
                     else col_a
                 )
 
+                font = (
+                    "ja"
+                    if text == "日本語"
+                    else "main"
+                )
+
                 self._draw_text(
                     f"footer_{index}",
                     text,
                     x,
                     y,
                     color=color,
+                    font=font,
                 )
 
     # def _draw_version(self):
@@ -1989,12 +2084,12 @@ class FileSelect:
 
         # Footer targets from DEVICE_MENU Draw.
         targets = {
-            3: (40, 195),
-            4: (125, 195),
-            5: (40, 215),
-            6: (125, 215),
-            7: (190, 195),
-            8: (190, 215),
+            3: (45, 199.5), # Copy, done
+            4: (129.5, 199.5), #Erase, done
+            5: (45, 219.5), # Previous Chapter Files, done
+            6: (129.5, 219.5), # Japanese, done
+            7: (194.5, 199.5), # Chapter select, done
+            8: (194.5, 219.5), # End Program, done
         }
 
         return targets.get(
@@ -2311,6 +2406,9 @@ class FileSelect:
         elif key in ("X",):
             key = "x"
 
+        if key == "x":
+            self._back_sound()
+
         if self.menu_no == MENU_PREVIOUS_FILES:
             self._input_previous_files(key)
             return
@@ -2438,7 +2536,6 @@ class FileSelect:
                 self._set_menu(MENU_MAIN)
 
         elif key == "x":
-            self._back_sound()
             self.menu_coord[MENU_MAIN] = 0
             self._set_menu(MENU_MAIN)
 
@@ -2480,7 +2577,6 @@ class FileSelect:
                 on_no()
 
         elif key == "x":
-            self._back_sound()
             self._set_menu(back_menu)
 
         self._last_layout_signature = None
@@ -2527,35 +2623,38 @@ class FileSelect:
                 self._move_sound()
 
         elif key == "Right":
-            new = selected
+            right_targets = {
+                3: 4,  # Copy -> Erase
+                4: 7,  # Erase -> Chapter Select
+                5: 6,  # Ch 5 Files -> Japanese
+                6: 8,  # Japanese -> End Program
+            }
 
-            if 3 <= selected < 7:
-                if selected == 4:
-                    new = 7
-                else:
-                    new = selected + 1
+            new = right_targets.get(
+                selected,
+                selected,
+            )
 
             if new != selected:
-                self.menu_coord[
-                    MENU_MAIN
-                ] = new
+                self.menu_coord[MENU_MAIN] = new
                 self._move_sound()
 
-        elif key == "Left":
-            new = selected
 
-            if selected >= 4 and selected != 5:
-                if selected == 7:
-                    new = 4
-                elif selected == 8:
-                    new = 6
-                else:
-                    new = selected - 1
+        elif key == "Left":
+            left_targets = {
+                4: 3,  # Erase -> Copy
+                7: 4,  # Chapter Select -> Erase
+                6: 5,  # Japanese -> Ch 5 Files
+                8: 6,  # End Program -> Japanese
+            }
+
+            new = left_targets.get(
+                selected,
+                selected,
+            )
 
             if new != selected:
-                self.menu_coord[
-                    MENU_MAIN
-                ] = new
+                self.menu_coord[MENU_MAIN] = new
                 self._move_sound()
 
         elif key == "z":
@@ -2729,7 +2828,6 @@ class FileSelect:
                 self._move_sound()
 
         elif key == "x":
-            self._back_sound()
             if menu == MENU_COPY_TARGET:
                 self._set_menu(
                     MENU_COPY_SOURCE
@@ -2750,7 +2848,7 @@ class FileSelect:
 
             if menu == MENU_COPY_SOURCE:
                 if not self.files[selected]:
-                    self._error_sound()
+                    self._back_sound()
                     self._set_message(
                         "It can't be copied.",
                         90,
@@ -2772,7 +2870,6 @@ class FileSelect:
             target = selected
 
             if source == target:
-                self._back_sound()
                 self._set_message(
                     "You can't copy there.",
                     90,
@@ -2959,7 +3056,6 @@ class FileSelect:
                 self._move_sound()
 
         elif key == "x":
-            self._back_sound()
             self._set_menu(MENU_MAIN)
             return
 
@@ -2974,7 +3070,7 @@ class FileSelect:
                 return
 
             if not self.files[selected]:
-                self._error_sound()
+                self._back_sound()
                 self._set_message(
                     "There's nothing to erase.",
                     90,
