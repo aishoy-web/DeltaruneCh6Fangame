@@ -80,7 +80,7 @@ CHAPTER_LABEL_Y = 4
 
 # Row text.
 FILE_TEXT_X = BOX_X1 + 25
-FILE_PLACE_X = BOX_X1 + 10
+FILE_PLACE_X = BOX_X1 + 20
 FILE_TIME_X = BOX_X1 + 180
 
 # Footer.
@@ -137,7 +137,7 @@ SPRITES_DIR = BASE_DIR / "sprites"
 #     [Chapter 5 END]
 #
 # Set e.g. CHAPTER_5_END_LOCATION = "Your Room" later if desired.
-CHAPTER_5_END_LOCATION = "Outside Closet"
+CHAPTER_5_END_LOCATION = "School Hall"
 
 # ------------------------------------------------------------
 # Colors
