@@ -101,6 +101,12 @@ HEART_CONFIRM_A_X = 75
 HEART_CONFIRM_B_X = 165
 HEART_CONFIRM_Y = 81
 
+GIANT_DOOR_ORIGIN_X = 35
+GIANT_DOOR_ORIGIN_Y = 0
+
+GIANT_DOOR_SCALE_X = 2.0
+GIANT_DOOR_SCALE_Y = 2.0
+
 # ------------------------------------------------------------
 # Audio
 # ------------------------------------------------------------
@@ -292,6 +298,9 @@ class FileSelect:
 
         self.text_photos = {}
 
+        self.version_item = None
+        self.version_photo = None
+
         # File Select now renders all UI into one logical 320x240 PIL
         # framebuffer.  Keeping text in the framebuffer prevents other
         # Game canvas layers from covering it on the next update tick.
@@ -419,6 +428,36 @@ class FileSelect:
                     return parser.get(section, option, fallback=default)
 
         return default
+    @staticmethod
+    def _clean_ini_text(value):
+        text = str(value).strip()
+        # Remove only matching quotation marks surrounding
+        # the entire value.
+        if (
+            len(text) >= 2
+            and text[0] == text[-1]
+            and text[0] in ('"', "'")
+        ):
+            text = text[1:-1]
+
+        return text
+    @staticmethod
+    def _clean_ini_number(value, default=0.0):
+        try:
+            text = str(value).strip()
+
+            # Remove matching quotation marks around the entire value.
+            if (
+                len(text) >= 2
+                and text[0] == text[-1]
+                and text[0] in ('"', "'")
+            ):
+                text = text[1:-1].strip()
+
+            return float(text)
+
+        except (TypeError, ValueError):
+            return float(default)
 
     def _current_file_candidates(self, slot: int):
         # ProgressTracker's final convention has no extension, while an older
@@ -584,6 +623,14 @@ class FileSelect:
             tags=(self.TAG,),
         )
 
+        self.version_item = self.canvas.create_image(
+            0,
+            0,
+            anchor="se",
+            state="hidden",
+            tags=(self.TAG,),
+        )
+
         self.heart_item = self.canvas.create_image(
             0,
             0,
@@ -733,12 +780,17 @@ class FileSelect:
 
     def refresh_save_data(self):
         """Load current Chapter 6 and previous Chapter 5 FILE metadata."""
+
         for i in range(3):
-            # Current Chapter 6 FILE.
+
+            # ==================================================
+            # Current Chapter 6 FILE
+            # ==================================================
+
             self.files[i] = self._current_file_exists(i)
 
             if self.files[i]:
-                self.name[i] = str(
+                self.name[i] = self._clean_ini_text(
                     self._read_ini(
                         CURRENT_CHAPTER,
                         i,
@@ -754,16 +806,19 @@ class FileSelect:
                     0,
                 )
 
-                try:
-                    self.time_ticks[i] = float(raw_time)
-                except (TypeError, ValueError):
-                    self.time_ticks[i] = 0.0
-
-                self.time_string[i] = self.time_display(
-                    self.time_ticks[i]
+                self.time_ticks[i] = (
+                    self._clean_ini_number(
+                        raw_time
+                    )
                 )
 
-                self.place[i] = str(
+                self.time_string[i] = (
+                    self.time_display(
+                        self.time_ticks[i]
+                    )
+                )
+
+                self.place[i] = self._clean_ini_text(
                     self._read_ini(
                         CURRENT_CHAPTER,
                         i,
@@ -772,19 +827,16 @@ class FileSelect:
                     )
                 )
 
-                try:
-                    self.init_lang[i] = int(
-                        float(
-                            self._read_ini(
-                                CURRENT_CHAPTER,
-                                i,
-                                "InitLang",
-                                0,
-                            )
+                self.init_lang[i] = int(
+                    self._clean_ini_number(
+                        self._read_ini(
+                            CURRENT_CHAPTER,
+                            i,
+                            "InitLang",
+                            0,
                         )
                     )
-                except (TypeError, ValueError):
-                    self.init_lang[i] = 0
+                )
 
             else:
                 self.name[i] = "[EMPTY]"
@@ -793,7 +845,10 @@ class FileSelect:
                 self.place[i] = "------------"
                 self.init_lang[i] = 0
 
-            # Previous Chapter 5 FILE existence.
+            # ==================================================
+            # Previous Chapter 5 FILE
+            # ==================================================
+
             self.complete_prev[i] = (
                 self.progress.completed_chapter_in_slot(
                     PREVIOUS_CHAPTER,
@@ -814,6 +869,8 @@ class FileSelect:
                 else self.complete_prev[i]
             )
 
+            # Incomplete files use 0..2.
+            # Completion files use 3..5.
             previous_ini_slot = (
                 i
                 if self.incomplete_load
@@ -821,12 +878,14 @@ class FileSelect:
             )
 
             if use_file:
-                self.complete_prev_name[i] = str(
-                    self._read_ini(
-                        PREVIOUS_CHAPTER,
-                        previous_ini_slot,
-                        "Name",
-                        "------",
+                self.complete_prev_name[i] = (
+                    self._clean_ini_text(
+                        self._read_ini(
+                            PREVIOUS_CHAPTER,
+                            previous_ini_slot,
+                            "Name",
+                            "------",
+                        )
                     )
                 )
 
@@ -837,10 +896,21 @@ class FileSelect:
                     0,
                 )
 
-                try:
-                    self.complete_prev_time[i] = float(raw_time)
-                except (TypeError, ValueError):
-                    self.complete_prev_time[i] = 0.0
+                # Temporary diagnostic.
+                print(
+                    "[FileSelect] Chapter 5 time:",
+                    self.ini_chapter(
+                        PREVIOUS_CHAPTER,
+                        previous_ini_slot,
+                    ),
+                    repr(raw_time),
+                )
+
+                self.complete_prev_time[i] = (
+                    self._clean_ini_number(
+                        raw_time
+                    )
+                )
 
                 self.complete_prev_time_string[i] = (
                     self.time_display(
@@ -849,9 +919,6 @@ class FileSelect:
                 )
 
                 if self.incomplete_load:
-                    # The GML stores the actual room name here. We do not
-                    # currently have GameMaker room-id -> Chapter 5 room-name
-                    # tables in the Python project, so use a neutral label.
                     self.complete_prev_place[i] = (
                         f"Chapter {PREVIOUS_CHAPTER} FILE"
                     )
@@ -861,6 +928,7 @@ class FileSelect:
                             PREVIOUS_CHAPTER
                         )
                     )
+
             else:
                 self.complete_prev_name[i] = "NO DATA"
                 self.complete_prev_time[i] = 0.0
@@ -881,35 +949,77 @@ class FileSelect:
             lambda value: round(value * alpha)
         )
         result.putalpha(channel)
+
         return result
 
+
     @staticmethod
-    def _paste_centered(frame, image, center_x, center_y):
-        x = round(center_x - image.width / 2)
-        y = round(center_y - image.height / 2)
-        frame.alpha_composite(image, dest=(x, y))
+    def _paste_with_origin(
+        frame,
+        image,
+        x,
+        y,
+        origin_x,
+        origin_y,
+        xscale=1.0,
+        yscale=1.0,
+    ):
+        dest_x = round(
+            x - origin_x * xscale
+        )
+
+        dest_y = round(
+            y - origin_y * yscale
+        )
+
+        frame.alpha_composite(
+            image,
+            dest=(dest_x, dest_y),
+        )
+
 
     def _draw_subtype0_background(self, frame):
         """Reproduce the faint spr_giantdarkdoor pulse."""
+
         if self.giant_dark_door is None:
             return
 
+        GIANT_DOOR_ORIGIN_X = 35
+        GIANT_DOOR_ORIGIN_Y = 0
+
+        GIANT_DOOR_SCALE_X = 2.0
+        GIANT_DOOR_SCALE_Y = 2.0
+
         door = self.giant_dark_door.resize(
             (
-                max(1, self.giant_dark_door.width * 2),
-                max(1, self.giant_dark_door.height * 2),
+                max(
+                    1,
+                    round(
+                        self.giant_dark_door.width
+                        * GIANT_DOOR_SCALE_X
+                    )
+                ),
+                max(
+                    1,
+                    round(
+                        self.giant_dark_door.height
+                        * GIANT_DOOR_SCALE_Y
+                    )
+                ),
             ),
             Image.Resampling.NEAREST,
         )
 
         pulse_alpha = (
             0.03
-            + math.sin(self.bg_siner / 20.0) * 0.04
+            + math.sin(
+                self.bg_siner / 20.0
+            ) * 0.04
         )
 
         faint = self._set_image_alpha(
             door,
-            max(0.0, pulse_alpha),
+            pulse_alpha,
         )
 
         strong = self._set_image_alpha(
@@ -917,26 +1027,32 @@ class FileSelect:
             0.25,
         )
 
-        # GameMaker draw_sprite_ext positions:
-        # (43,48), (47,48), (43,52), (47,52), (45,50)
         for x, y in (
             (43, 48),
             (47, 48),
             (43, 52),
             (47, 52),
         ):
-            self._paste_centered(
+            self._paste_with_origin(
                 frame,
                 faint,
                 x,
                 y,
+                GIANT_DOOR_ORIGIN_X,
+                GIANT_DOOR_ORIGIN_Y,
+                GIANT_DOOR_SCALE_X,
+                GIANT_DOOR_SCALE_Y,
             )
 
-        self._paste_centered(
+        self._paste_with_origin(
             frame,
             strong,
             45,
             50,
+            GIANT_DOOR_ORIGIN_X,
+            GIANT_DOOR_ORIGIN_Y,
+            GIANT_DOOR_SCALE_X,
+            GIANT_DOOR_SCALE_Y,
         )
 
     def _draw_subtype1_background(self, frame):
@@ -1280,14 +1396,30 @@ class FileSelect:
 
                 cursor_x += shift
 
-        if scale_multiplier != 1.0:
-            image = image.resize(
-                (
-                    max(1, round(image.width * scale_multiplier)),
-                    max(1, round(image.height * scale_multiplier)),
+        if scale_multiplier < 1.0:
+            resampling = Image.Resampling.LANCZOS
+        else:
+            resampling = Image.Resampling.NEAREST
+
+        image = image.resize(
+            (
+                max(
+                    1,
+                    round(
+                        image.width
+                        * scale_multiplier
+                    )
                 ),
-                Image.Resampling.NEAREST,
-            )
+                max(
+                    1,
+                    round(
+                        image.height
+                        * scale_multiplier
+                    )
+                ),
+            ),
+            resampling,
+        )
 
         self._pil_text_cache[cache_key] = image
         return image
@@ -1716,27 +1848,67 @@ class FileSelect:
                     color=color,
                 )
 
-    def _draw_version(self):
+    # def _draw_version(self):
+    #     version = getattr(
+    #         self.game,
+    #         "versionno",
+    #         "v23",
+    #     )
+
+    #     text = (
+    #         f"DELTARUNE {version} "
+    #         f"(C) Toby Fox 2018-2026"
+    #     )
+
+    #     self._draw_text(
+    #         "version",
+    #         text,
+    #         313,
+    #         236,
+    #         color="#666666",
+    #         anchor="se",
+    #         shadow=False,
+    #         scale_multiplier=0.5,
+    #     )
+    def _render_version_overlay(self):
         version = getattr(
             self.game,
             "versionno",
-            "v23",
+            "v0.0.0",
         )
 
         text = (
             f"DELTARUNE {version} "
-            f"(C) Toby Fox 2018-2026"
+            f"(C) Toby Fox 2018-2026, Exdwarf & Coolblubird 2026-2027"
         )
 
-        self._draw_text(
-            "version",
+        # Render directly at final display scale.
+        # MainFont multiplies this by game.scale internally.
+        self.version_photo = self.main_font.render(
             text,
+            color="#666666",
+            scale_multiplier=0.5,
+        )
+
+        x, y = self._ui_to_screen(
             313,
             236,
-            color="#666666",
-            anchor="se",
-            shadow=False,
-            scale_multiplier=0.5,
+        )
+
+        self.canvas.coords(
+            self.version_item,
+            x,
+            y,
+        )
+
+        self.canvas.itemconfigure(
+            self.version_item,
+            image=self.version_photo,
+            state="normal",
+        )
+
+        self.canvas.tag_raise(
+            self.version_item
         )
 
     def _render_text_ui(self, frame):
@@ -1760,7 +1932,7 @@ class FileSelect:
                 color=self._colors()[1],
             )
 
-            self._draw_version()
+            # self._draw_version()
 
             self._draw_text(
                 "chapter_label",
@@ -1958,6 +2130,7 @@ class FileSelect:
         # one complete logical framebuffer.
         self.canvas.tag_raise(self.black_background)
         self.canvas.tag_raise(self.frame_item)
+        self._render_version_overlay()
 
     def render_static(self):
         """Compatibility with the current Game.render_static() pattern."""
@@ -2004,7 +2177,7 @@ class FileSelect:
         # Keep the same smooth timing used by the first implementation.
         # The counters are scaled by real elapsed time so the animation
         # remains stable even if Tk misses an individual callback.
-        step_scale = dt * 60.0
+        step_scale = dt * 30.0
 
         self.bg_siner += step_scale
 

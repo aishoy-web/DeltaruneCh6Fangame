@@ -447,14 +447,6 @@ class Game:
 
         self._set_file_menu_visible(True)
 
-        # Start File Select music HERE.
-        file_select_music = ROOMS["mainMenu"].music
-        # print("FILE SELECT MUSIC:", repr(file_select_music))
-        if file_select_music:
-            self.audio.play_music(
-                file_select_music
-            )
-
         if fade_in:
             self.render_fade()
 

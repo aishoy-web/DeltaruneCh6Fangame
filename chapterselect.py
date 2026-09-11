@@ -63,7 +63,7 @@ FOOTER_Y = 224.5
 
 # Copyright / version information
 FOOTER_INFO_X = 8
-FOOTER_INFO_Y = 214
+FOOTER_INFO_Y = 218
 
 # Independent scale for copyright information.
 # This is multiplied by the normal viewport scale.
@@ -2432,8 +2432,8 @@ class ChapterSelect:
 
         info_image = self.main_font.render(
             "(C) Toby Fox 2018-2026\n"
-            "Exdwarf, Coolblubird\n"
-              "2026-2027\n"
+            # "Exdwarf, Coolblubird\n"
+            #   "2026-2027\n"
             "DELTARUNE v24",
             color=GRAY,
             scale_multiplier=FOOTER_INFO_SCALE
