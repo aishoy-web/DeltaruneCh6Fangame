@@ -488,20 +488,61 @@ class ChapterIntro:
             return
 
         now = time.perf_counter()
-        dt = min(now - self.last_update_at, 0.10)
-        self.last_update_at = now
-        elapsed = now - self.started_at
 
-        # Z skip: immediately stop building the picture and fade to black.
+        dt = min(
+            now - self.last_update_at,
+            0.10
+        )
+
+        self.last_update_at = now
+
+        elapsed = (
+            now - self.started_at
+        )
+
+        # --------------------------------------------------
+        # Snow keeps animating even during a Z-triggered fade.
+        # --------------------------------------------------
+
+        self._spawn_ambient(
+            dt
+        )
+
+        self._activate_target_flakes(
+            elapsed
+        )
+
+        self._update_ambient(
+            dt,
+            elapsed
+        )
+
+        self._update_logo_flakes(
+            dt,
+            elapsed
+        )
+
+        # --------------------------------------------------
+        # Z skip
+        #
+        # The intro keeps updating behind the black fade.
+        # Once the fade reaches full black, move on to
+        # File Select.
+        # --------------------------------------------------
+
         if self.skip_started_at is not None:
-            if now - self.skip_started_at >= self.SKIP_FADE_TIME:
+
+            if (
+                now - self.skip_started_at
+                >= self.SKIP_FADE_TIME
+            ):
                 self.finish()
+
             return
 
-        self._spawn_ambient(dt)
-        self._activate_target_flakes(elapsed)
-        self._update_ambient(dt, elapsed)
-        self._update_logo_flakes(dt, elapsed)
+        # --------------------------------------------------
+        # Normal automatic ending
+        # --------------------------------------------------
 
         hold_end = (
             self.logo_complete_at

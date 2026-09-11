@@ -1,11 +1,13 @@
 from fileinput import filename
 import tkinter as tk
 import time
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from animated_sprite import AnimatedSprite
 from rooms import ROOMS
 from PIL import Image, ImageTk
-# from chapterselect import ChapterSelect
 from ui_sprites import UISpriteSheet
 from hud import HUD
 from player import Player
@@ -23,6 +25,9 @@ import os #file manip
 
 BASE_DIR = Path(__file__).resolve().parent
 uiSpritesheetPath = BASE_DIR/"sprites"/"ui"/"menu+HUD_spritesheet.png" #unbelievably cursed having it here, but if we need to reuse it for anything else we can easily rename the var  
+CHAPTER_SELECT_ENTRY = (
+    BASE_DIR / "chapterselect.py"
+)
 
 ''' 
     TODO LIST:
@@ -128,8 +133,12 @@ class Game:
 
         # Fade used specifically for the startup-screen -> File Select handoff.
         self.file_select_fade_active = False
-        self.file_select_fade_started_at = None
+        self.file_select_fade_started_at = None 
         self.file_select_fade_duration = 0.75
+
+        self.chapter_select_process = None
+        self.chapter_select_ready_file = None
+        self.chapter_select_handoff_launched = False
 
         self.audio = AudioManager()
         self.progress = ProgressTracker()
@@ -182,7 +191,12 @@ class Game:
         # Keep track of the Canvas items FileMenu creates so Game can hide
         # the file-select screen until the startup sequence has finished.
         file_menu_items_before = set(self.canvas.find_all())
-        self.file_menu = FileMenu(self)
+        self.file_menu = FileMenu(
+            self,
+            on_chapter_select=(
+                self.return_to_chapter_select
+            ),
+        )
         self.file_menu.create_widgets()
         file_menu_items_after = set(self.canvas.find_all())
         self.file_menu_canvas_items = list(
@@ -244,32 +258,204 @@ class Game:
         "chapter_logo",
     }
 
+    def return_to_chapter_select(self):
+        """
+        Freeze File Select, stop its music, and begin
+        loading Chapter Select immediately.
+
+        File Select remains visible until Chapter Select
+        signals that its first complete frame is ready.
+        """
+
+        if self.state == "chapter_select_handoff":
+            return
+
+        self.state = "chapter_select_handoff"
+
+        self.chapter_select_handoff_launched = False
+
+        # Freeze the exact visible File Select frame and
+        # stop its music immediately.
+        try:
+            self.file_menu.freeze_for_handoff()
+        except Exception:
+            pass
+
+        # No fade. Start loading Chapter Select now.
+        self._launch_chapter_select_handoff()
+
+    def _launch_chapter_select_handoff(self):
+        """
+        Launch Chapter Select only after Chapter 6 has
+        completely faded to black.
+        """
+
+        if self.chapter_select_handoff_launched:
+            return
+
+        self.chapter_select_handoff_launched = True
+
+        # ----------------------------------------------
+        # Create unique ready-file path.
+        # ----------------------------------------------
+
+        fd, ready_path = tempfile.mkstemp(
+            prefix="deltarune_chapter_select_ready_",
+            suffix=".tmp",
+        )
+
+        os.close(fd)
+
+        # We only wanted tempfile to generate a unique path.
+        try:
+            os.remove(
+                ready_path
+            )
+        except OSError:
+            pass
+
+        self.chapter_select_ready_file = (
+            ready_path
+        )
+
+        # ----------------------------------------------
+        # Launch Chapter Select.
+        #
+        # --select:
+        #     bypass startup completion/continue prompt
+        #
+        # --ready-file:
+        #     Chapter Select signals when its first frame
+        #     has actually been prepared.
+        # ----------------------------------------------
+
+        try:
+            self.chapter_select_process = (
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        str(
+                            CHAPTER_SELECT_ENTRY
+                        ),
+                        "--select",
+                        "--ready-file",
+                        ready_path,
+                    ],
+                    cwd=str(BASE_DIR),
+                )
+            )
+
+        except Exception as exc:
+            print(
+                "[Game] Could not launch "
+                "Chapter Select:",
+                exc,
+            )
+
+            self._cancel_chapter_select_handoff()
+
+    def _cancel_chapter_select_handoff(self):
+        """
+        Restore File Select if Chapter Select could not
+        start successfully.
+        """
+
+        if self.chapter_select_ready_file:
+            try:
+                os.remove(
+                    self.chapter_select_ready_file
+                )
+            except OSError:
+                pass
+
+        self.chapter_select_ready_file = None
+        self.chapter_select_process = None
+        self.chapter_select_handoff_launched = False
+        self.chapter_select_handoff_started_at = None
+
+        self.fade_alpha = 0
+        self.render_fade()
+
+        self.state = "file_select"
+
+        try:
+            self.file_menu.start()
+        except Exception:
+            pass
+
+    def update_chapter_select_handoff(self):
+        """
+        Keep the frozen File Select visible until
+        Chapter Select signals that it is ready.
+        """
+
+        ready_path = (
+            self.chapter_select_ready_file
+        )
+
+        if ready_path is None:
+            return
+
+        # ----------------------------------------------
+        # Chapter Select is ready.
+        # ----------------------------------------------
+
+        if os.path.exists(
+            ready_path
+        ):
+            try:
+                os.remove(
+                    ready_path
+                )
+            except OSError:
+                pass
+
+            self.chapter_select_ready_file = None
+
+            # The new fullscreen Chapter Select is already
+            # visible. Remove the old Chapter 6 window now.
+            try:
+                self.root.destroy()
+            except tk.TclError:
+                pass
+
+            return
+
+        # ----------------------------------------------
+        # Failure protection
+        # ----------------------------------------------
+
+        if (
+            self.chapter_select_process is not None
+            and self.chapter_select_process.poll()
+            is not None
+        ):
+            print(
+                "[Game] Chapter Select exited before "
+                "signaling readiness. Exit code:",
+                self.chapter_select_process.returncode,
+            )
+
+            self._cancel_chapter_select_handoff()
+
     def show_window(self):
-
         self.root.deiconify()
-
         self.fullscreen = True
         self.root.attributes(
             "-fullscreen",
             True,
         )
-
         self.root.update_idletasks()
-
         self.on_resize()
-
         if not self.startup_started:
             self.startup_started = True
             self.start_chapter_startup()
-
         if self.active_startup_screen is not None:
             self.active_startup_screen.render()
-
         # Force Windows/Tk to actually create and paint the window
         # before chapter6.py signals readiness.
         self.root.update_idletasks()
         self.root.update()
-
     def launch_chapter(self, chapter):
         if chapter != 6:
             return
@@ -1459,6 +1645,21 @@ class Game:
                 else 16
             )
             self.root.after(frame_ms, self.update)
+            return
+
+        # --------------------------------------------------
+        # Chapter Select handoff
+        # --------------------------------------------------
+
+        if self.state == "chapter_select_handoff":
+
+            self.update_chapter_select_handoff()
+
+            self.root.after(
+                16,
+                self.update
+            )
+
             return
 
         # --------------------------------------------------

@@ -229,8 +229,26 @@ STARTUP_FRAME_MS = 33
 STARTUP_ALPHA_THRESHOLD = 0.999
 
 class ChapterSelect:
-    def __init__(self):
+    def __init__(
+        self,
+        force_select=False,
+        ready_file=None,
+    ):
+        self.force_select = bool(
+            force_select
+        )
+
+        self.ready_file = (
+            Path(ready_file)
+            if ready_file
+            else None
+        )
         self.root = tk.Tk()
+        # When returning from Chapter 6, construct everything
+        # while hidden so an unfinished Tk window can never flash
+        # on screen.
+        if self.ready_file is not None:
+            self.root.withdraw()
         self.root.title("DELTARUNE")
         self.root.attributes("-fullscreen", True)
         icon_path = BASE_DIR / "sprites" / "assets" / "taskbar_logo.png"
@@ -395,11 +413,20 @@ class ChapterSelect:
         self.keys_pressed.discard(event.keysym)
 
     def run(self):
+        if self.force_select:
 
-        if self.startup_prompt_active:
+            self.startup_prompt_active = False
+            self.startup_prompt_type = None
 
-            # obj_CHAPTER_SELECT stops the drone while
-            # obj_screen_start is visible.
+        if self.force_select:
+
+            self.startup_prompt_active = False
+            self.startup_prompt_type = None
+
+            self.start_normal_chapter_select()
+
+        elif self.startup_prompt_active:
+
             self.audio.stop_music()
 
             self.render()
@@ -413,9 +440,74 @@ class ChapterSelect:
 
             self.start_normal_chapter_select()
 
+        # If Chapter 6 launched us as part of a handoff,
+        # reveal the prepared window and signal readiness.
+        if self.ready_file is not None:
+            self.root.after_idle(
+                self.show_after_handoff
+            )
+
         self.root.mainloop()
 
         return self.selected_chapter
+
+    def show_after_handoff(self):
+        """
+        Reveal the already-created Chapter Select window.
+
+        Chapter 6 remains as a fullscreen black curtain
+        behind/in front of us until signal_handoff_ready()
+        creates the temporary ready file.
+        """
+
+        self.root.deiconify()
+
+        self.root.attributes(
+            "-fullscreen",
+            True
+        )
+
+        # Let Tk establish the real fullscreen dimensions.
+        self.root.update_idletasks()
+
+        self.update_scale()
+
+        # Render once using the correct fullscreen scale.
+        self.render()
+
+        self.root.update_idletasks()
+
+        # Give Windows/Tk one frame to actually present the
+        # prepared Chapter Select before removing Chapter 6.
+        self.root.after(
+            16,
+            self.signal_handoff_ready
+        )
+
+
+    def signal_handoff_ready(self):
+        if self.ready_file is None:
+            return
+
+        try:
+            self.ready_file.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            self.ready_file.touch()
+
+        except OSError as exc:
+            print(
+                "[ChapterSelect] Could not signal "
+                "handoff readiness:",
+                exc,
+            )
+
+            return
+
+        # Only signal once.
+        self.ready_file = None
 
     def load_assets(self):
 
@@ -2726,9 +2818,9 @@ class ChapterSelect:
 
     def start_normal_chapter_select(
         self,
-        from_startup_prompt=False
+        from_startup_prompt=False,
+        animate=True,
     ):
-
         if self.startup_job is not None:
 
             try:
@@ -2781,11 +2873,17 @@ class ChapterSelect:
             "AUDIO_DRONE.ogg"
         )
 
-        self.entrance_active = True
-        self.entrance_alpha = 0.0
-        self.entrance_y_offset = (
-            ENTRANCE_START_Y_OFFSET
-        )
+        if animate:
+            self.entrance_active = True
+            self.entrance_alpha = 0.0
+            self.entrance_y_offset = (
+                ENTRANCE_START_Y_OFFSET
+            )
+
+        else:
+            self.entrance_active = False
+            self.entrance_alpha = 1.0
+            self.entrance_y_offset = 0.0
 
         self.show()
         self.main_font.clear_cache()
@@ -2793,7 +2891,6 @@ class ChapterSelect:
         self.render()
 
         if self.entrance_job is not None:
-
             try:
                 self.root.after_cancel(
                     self.entrance_job
@@ -2801,10 +2898,13 @@ class ChapterSelect:
             except tk.TclError:
                 pass
 
-        self.entrance_job = self.root.after(
-            ENTRANCE_FRAME_MS,
-            self.update_entrance
-        )
+            self.entrance_job = None
+
+        if self.entrance_active:
+            self.entrance_job = self.root.after(
+                ENTRANCE_FRAME_MS,
+                self.update_entrance
+            )
 
     # ======================================================
     # CHAPTER NAVIGATION
@@ -3721,3 +3821,26 @@ class ChapterSelect:
         """
 
         pass
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--select",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--ready-file",
+        default=None,
+    )
+
+    args = parser.parse_args()
+
+    chapter_select = ChapterSelect(
+        force_select=args.select,
+        ready_file=args.ready_file,
+    )
+
+    chapter_select.run()

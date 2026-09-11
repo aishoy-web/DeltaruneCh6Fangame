@@ -305,6 +305,8 @@ class FileSelect:
         self.version_item = None
         self.version_photo = None
 
+        self.menu_music_channel = None
+
         # File Select now renders all UI into one logical 320x240 PIL
         # framebuffer.  Keeping text in the framebuffer prevents other
         # Game canvas layers from covering it on the next update tick.
@@ -763,10 +765,21 @@ class FileSelect:
 
         if self._job is not None:
             try:
-                self.root.after_cancel(self._job)
+                self.root.after_cancel(
+                    self._job
+                )
             except Exception:
                 pass
+
             self._job = None
+
+        if self.menu_music_channel is not None:
+            try:
+                self.menu_music_channel.stop()
+            except Exception:
+                pass
+
+            self.menu_music_channel = None
 
         if stop_music:
             try:
@@ -2351,30 +2364,39 @@ class FileSelect:
             candidate = mus_dir / (
                 stem + suffix
             )
+
             if candidate.exists():
                 path = candidate
                 break
 
+        if path is None:
+            return
+
         try:
-            if path is not None:
-                # AudioManager in this project normally accepts a music
-                # filename. If a future version accepts a full path instead,
-                # the fallback below covers it.
-                try:
-                    self.game.audio.play_music(
-                        path.name
+            self.game.audio.stop_music()
+
+            # menu.ogg plays at 95% pitch.
+            if stem == "menu":
+                self.menu_music_channel = (
+                    self.game.audio.play_sfx_pitched(
+                        path,
+                        pitch=0.95,
+                        volume=self.game.audio.music_volume,
+                        loops=-1,
                     )
-                except Exception:
-                    self.game.audio.play_music(
-                        str(path)
-                    )
-            else:
-                # Let AudioManager attempt its normal lookup.
-                self.game.audio.play_music(
-                    stem + ".ogg"
                 )
-        except Exception:
-            pass
+
+            # quiet_church remains normal.
+            else:
+                self.game.audio.play_music(
+                    path.name
+                )
+
+        except Exception as exc:
+            print(
+                "[FileSelect] Could not play music:",
+                exc
+            )
 
     def _move_sound(self):
         self._play_sfx(SND_MENUMOVE)
@@ -2714,6 +2736,40 @@ class FileSelect:
                 self.root.destroy()
 
         self._last_layout_signature = None
+
+    def freeze_for_handoff(self):
+        """
+        Keep File Select visually running while Chapter
+        Select loads, but stop its music immediately.
+
+        Input is already blocked by Game because the game
+        state becomes "chapter_select_handoff".
+        """
+
+        # IMPORTANT:
+        # Do NOT set:
+        #
+        #     self.active = False
+        #
+        # and do NOT cancel self._job.
+        #
+        # FileSelect._tick() should continue running so the
+        # animated background remains alive.
+
+        # menu.ogg is a pitched pygame Sound channel.
+        if self.menu_music_channel is not None:
+            try:
+                self.menu_music_channel.stop()
+            except Exception:
+                pass
+
+            self.menu_music_channel = None
+
+        # quiet_church uses pygame.mixer.music.
+        try:
+            self.game.audio.stop_music()
+        except Exception:
+            pass
 
     # ========================================================
     # Current FILE start / continue
