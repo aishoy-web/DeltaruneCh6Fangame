@@ -440,8 +440,6 @@ class ChapterSelect:
 
             self.start_normal_chapter_select()
 
-        # If Chapter 6 launched us as part of a handoff,
-        # reveal the prepared window and signal readiness.
         if self.ready_file is not None:
             self.root.after_idle(
                 self.show_after_handoff

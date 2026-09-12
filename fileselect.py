@@ -98,9 +98,9 @@ HEART_FILE_STEP = YL + YS  # 45
 HEART_CANCEL_X = 40
 HEART_CANCEL_Y = 195
 
-HEART_CONFIRM_A_X = 75
-HEART_CONFIRM_B_X = 165
-HEART_CONFIRM_Y = 81
+HEART_CONFIRM_A_X = 79.5
+HEART_CONFIRM_B_X = 169.5
+HEART_CONFIRM_Y = 85.5
 
 GIANT_DOOR_ORIGIN_X = 35
 GIANT_DOOR_ORIGIN_Y = 0
@@ -2554,11 +2554,11 @@ class FileSelect:
                     self._error_sound()
             else:
                 self._select_sound()
-                self.menu_coord[MENU_MAIN] = 0
+                self.menu_coord[MENU_MAIN] = 5
                 self._set_menu(MENU_MAIN)
 
         elif key == "x":
-            self.menu_coord[MENU_MAIN] = 0
+            self.menu_coord[MENU_MAIN] = 5
             self._set_menu(MENU_MAIN)
 
         self._last_layout_signature = None
