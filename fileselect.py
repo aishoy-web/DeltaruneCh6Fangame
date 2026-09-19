@@ -204,6 +204,12 @@ class FileSelect:
         ``slot`` is the visible 0..2 slot.
         ``path`` points to filech5_3..5.
 
+    on_file_selected(kind, slot, path):
+        Preferred game-level handoff. ``kind`` is ``"continue"``, ``"new"``,
+        or ``"import_previous"``. ``path`` is only populated for a previous-
+        chapter import. FileSelect stops itself and reports the selection; the
+        Game decides which scene or room comes next.
+
     on_chapter_select():
         Called when "Chapter Select" is chosen.
 
@@ -222,6 +228,9 @@ class FileSelect:
         on_continue: Optional[Callable[[int], None]] = None,
         on_new_file: Optional[Callable[[int], None]] = None,
         on_import_previous: Optional[Callable[[int, Path], None]] = None,
+        on_file_selected: Optional[
+            Callable[[str, int, Optional[Path]], None]
+        ] = None,
         on_chapter_select: Optional[Callable[[], None]] = None,
         on_language: Optional[Callable[[], None]] = None,
     ):
@@ -232,6 +241,7 @@ class FileSelect:
         self.on_continue = on_continue
         self.on_new_file = on_new_file
         self.on_import_previous = on_import_previous
+        self.on_file_selected = on_file_selected
         self.on_chapter_select = on_chapter_select
         self.on_language = on_language
 
@@ -2775,6 +2785,44 @@ class FileSelect:
     # Current FILE start / continue
     # ========================================================
 
+    def _dispatch_file_selection(
+        self,
+        kind: str,
+        slot: int,
+        path: Optional[Path] = None,
+    ) -> bool:
+        """Report a confirmed FILE without choosing the next game state."""
+        if self.on_file_selected is not None:
+            self.stop()
+            self.on_file_selected(
+                kind,
+                slot,
+                path,
+            )
+            return True
+
+        # Backward compatibility for code that still supplies the original
+        # three specialized callbacks.
+        callback = None
+        callback_args = ()
+
+        if kind == "continue":
+            callback = self.on_continue
+            callback_args = (slot,)
+        elif kind == "new":
+            callback = self.on_new_file
+            callback_args = (slot,)
+        elif kind == "import_previous":
+            callback = self.on_import_previous
+            callback_args = (slot, path)
+
+        if callback is None:
+            return False
+
+        self.stop()
+        callback(*callback_args)
+        return True
+
     def _confirm_current_file(self):
         slot = self.menu_coord[
             MENU_MAIN
@@ -2788,20 +2836,20 @@ class FileSelect:
         )
 
         if self.files[slot]:
-            if self.on_continue is not None:
-                self.stop()
-                self.on_continue(slot)
-            else:
+            if not self._dispatch_file_selection(
+                "continue",
+                slot,
+            ):
                 self._set_message(
                     f"Continue FILE Slot {slot + 1}.",
                     90,
                 )
                 self._set_menu(MENU_MAIN)
         else:
-            if self.on_new_file is not None:
-                self.stop()
-                self.on_new_file(slot)
-            else:
+            if not self._dispatch_file_selection(
+                "new",
+                slot,
+            ):
                 self._set_message(
                     f"Start FILE Slot {slot + 1}.",
                     90,
@@ -2847,13 +2895,11 @@ class FileSelect:
         #
         # We intentionally do not deserialize the full Chapter 5 save here.
         # That belongs in the Chapter 6 save/state loader, not in FileSelect.
-        if self.on_import_previous is not None:
-            self.stop()
-            self.on_import_previous(
-                slot,
-                path,
-            )
-        else:
+        if not self._dispatch_file_selection(
+            "import_previous",
+            slot,
+            path,
+        ):
             self._set_message(
                 (
                     f"Selected Chapter {PREVIOUS_CHAPTER} "

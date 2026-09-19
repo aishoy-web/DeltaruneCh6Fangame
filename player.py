@@ -61,6 +61,41 @@ class Player:
                 tags = "player_debug")
         else:
             self.hitbox_debug = None
+
+    # ------------------------------------------------------------------
+    # Generic cutscene-actor interface
+    # ------------------------------------------------------------------
+    def set_position(self, x, y):
+        self.x = x
+        self.y = y
+
+    def set_facing(self, direction=None):
+        aliases = {
+            "l": "left",
+            "r": "right",
+            "u": "up",
+            "d": "down",
+        }
+        if direction is not None:
+            self.facing = aliases.get(direction, direction)
+        if self.facing in ("left", "right", "up", "down"):
+            self.animation.play(self.facing)
+            self.animation.stop()
+
+    def start_walking(self):
+        aliases = {
+            "l": "left",
+            "r": "right",
+            "u": "up",
+            "d": "down",
+        }
+        self.facing = aliases.get(self.facing, self.facing)
+        if self.facing in ("left", "right", "up", "down"):
+            self.animation.play(self.facing)
+
+    def stop_walking(self):
+        self.animation.stop_at_next_rest_frame()
+
     def move(self, dx, dy):
         self.x += dx
         self.y += dy
@@ -150,6 +185,14 @@ class Player:
                 right + size,
                 bottom,)
     def render(self):
+        if self.invisible:
+            if self.canvas_sprite is not None:
+                self.game.canvas.itemconfigure(
+                    self.canvas_sprite,
+                    state="hidden",
+                )
+            return
+
         frame = self.animation.get_frame()
         scaled = frame.resize((int(frame.width * self.game.scale),int(frame.height * self.game.scale)),Image.Resampling.NEAREST)
         self.photo = ImageTk.PhotoImage(scaled)
@@ -170,7 +213,8 @@ class Player:
                     canvas_y)
                 self.game.canvas.itemconfig(
                     self.canvas_sprite,
-                    image=self.photo)    
+                    image=self.photo,
+                    state="normal")    
             
         # if in debug, show the hitbox
         if self.hitbox_debug is not None:

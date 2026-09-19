@@ -20,7 +20,18 @@ from progress import ProgressTracker
 from chapter_intro import ChapterIntro
 from legend import LegendSequence
 from chapter_logo import ChapterLogoSequence
+from opening_scene import OpeningScene
 import os #file manip
+import random
+from lw_items import (
+    ITEM_ACTIONS,
+    get_dw_weapon_id,
+    get_lw_item_description,
+    get_lw_item_name,
+    get_lw_weapon_strength,
+    is_lw_weapon,
+    normalize_lw_item_id,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -70,6 +81,32 @@ class Game:
         self.camera_zoom = 1.0
         self.offset_x = 0
         self.offset_y = 0
+
+        # ==================================================
+        # LIGHT WORLD STATS
+        # ==================================================
+
+        self.lcharname = "Kris"
+
+        self.llv = 1
+
+        self.lhp = 20
+        self.lmaxhp = 20
+
+        self.lat = 10
+        self.lwstrength = 0
+
+        self.ldf = 10
+        self.ladef = 0
+
+        self.lweapon = 0
+        self.larmor = 3
+
+        self.lgold = 2
+        self.lxp = 0
+
+        # Equivalent to global.flag[914].
+        self.kris_preservation_society = 0
         
         #slot stuff
         #remove later, for now exists to initalize the file select
@@ -193,6 +230,7 @@ class Game:
         file_menu_items_before = set(self.canvas.find_all())
         self.file_menu = FileMenu(
             self,
+            on_file_selected=self.handle_file_selection,
             on_chapter_select=(
                 self.return_to_chapter_select
             ),
@@ -220,16 +258,32 @@ class Game:
         )
 
         # Inventory
+        # Light World inventory now uses the original numeric
+        # global.litem IDs.  This lets USE/INFO/DROP and weapon
+        # swapping match the GML behavior.
         self.LW_inventory = [
-            "Ball of Junk",
-            "Glass",
-            "BlackShard"
+            5,   # Ball of Junk
+            11,  # Glass
+            17,  # BlackShard
         ]
+
+        # Numeric Light World flags used by item-specific behavior.
+        self.light_world_flags = {}
+
+        # Item dialogue is separate from room-script dialogue so menu
+        # actions can hand control to the existing DialogueBox without
+        # mutating room.dialogue.
+        self.item_dialogue_messages = []
+        self.item_dialogue_index = 0
+        self.item_dialogue_on_complete = None
         
         # Create basic game objects
         self.load_room("mainMenu", play_music=False)
         self.player = Player(self)
         self.menu = Menu(self)
+        self.opening_scene = OpeningScene(self)
+        self.current_save_slot = None
+        self.current_save_data = None
         # self.chapter_select = ChapterSelect(self)
         
         # Draw everything once finished initializing, so that the game starts with a fully rendered screen
@@ -636,6 +690,1004 @@ class Game:
         if fade_in:
             self.render_fade()
 
+    def start_opening_scene(
+        self,
+        slot=None,
+        save_data=None,
+        is_new_file=False,
+    ):
+        """Leave File Select and begin the Chapter 6 playable prologue."""
+        if self.state == "opening_scene":
+            return
+
+        self.file_select_fade_active = False
+        self.file_select_fade_started_at = None
+        self._set_file_menu_visible(False)
+        self.current_save_slot = slot
+        self.current_save_data = save_data
+        self.kris_preservation_society = int(
+            (save_data or {}).get(
+                "kris_preservation_society",
+                0,
+            )
+        )
+        save_data = save_data or {}
+
+        self.lweapon = int(
+            save_data.get(
+                "lweapon",
+                0,
+            )
+        )
+
+        self.larmor = int(
+            save_data.get(
+                "larmor",
+                0,
+            )
+        )
+
+        self.lxp = int(
+            save_data.get(
+                "lxp",
+                0,
+            )
+        )
+
+        self.llv = int(
+            save_data.get(
+                "llv",
+                1,
+            )
+        )
+
+        self.lgold = int(
+            save_data.get(
+                "lgold",
+                2,
+            )
+        )
+
+        self.lhp = int(
+            save_data.get(
+                "lhp",
+                20,
+            )
+        )
+
+        self.lmaxhp = int(
+            save_data.get(
+                "lmaxhp",
+                20,
+            )
+        )
+
+        self.lat = int(
+            save_data.get(
+                "lat",
+                10,
+            )
+        )
+
+        self.ldf = int(
+            save_data.get(
+                "ldf",
+                10,
+            )
+        )
+
+        self.lwstrength = int(
+            save_data.get(
+                "lwstrength",
+                0,
+            )
+        )
+
+        self.ladef = int(
+            save_data.get(
+                "ladef",
+                0,
+            )
+        )
+        imported_inventory = save_data.get(
+            "LW_inventory"
+        )
+
+        if imported_inventory is not None:
+            self.LW_inventory = [
+                item_id
+                for item_id in (
+                    normalize_lw_item_id(item)
+                    for item in imported_inventory
+                )
+                if item_id not in (None, 0)
+            ][:8]
+        print(
+            "[Opening Scene] lweapon =",
+            self.lweapon,
+        )
+        self.opening_scene.start(
+            save_slot=slot,
+            save_data=save_data,
+            is_new_file=is_new_file,
+        )
+        print(
+            "[Save Import] flag[914] =",
+            self.kris_preservation_society,
+        )
+
+    def handle_file_selection(
+        self,
+        kind,
+        slot,
+        source_path=None,
+    ):
+        """Own the File Select -> Chapter 6 state transition.
+
+        FileSelect only reports the confirmed selection. This method loads or
+        initializes the selected data, then chooses OpeningScene as the next
+        game state.
+        """
+        if kind == "continue":
+            try:
+                data = self.load(
+                    slot,
+                    start_game=False,
+                )
+            except (FileNotFoundError, json.JSONDecodeError):
+                # FileSelect also recognizes official/INI-backed Chapter 6
+                # data. The opening currently needs only the selected slot, so
+                # preserve the handoff even before that loader is implemented.
+                data = {
+                    "slot": slot,
+                    "chapter": 6,
+                    "source": "existing_file",
+                }
+            is_new_file = False
+
+        elif kind == "new":
+            data = self.new(
+                slot,
+                start_game=False,
+            )
+            is_new_file = True
+
+        elif kind == "import_previous":
+
+            light_stats = (
+                self.read_deltarune_pc_light_stats(
+                    source_path
+                )
+            )
+
+            light_inventory = (
+                self.read_deltarune_pc_light_inventory(
+                    source_path
+                )
+            )
+
+            self.kris_preservation_society = (
+                self.read_deltarune_pc_flag(
+                    source_path,
+                    914,
+                    default=0,
+                )
+            )
+
+            print(
+                "[Save Import] flag[914] =",
+                self.kris_preservation_society,
+            )
+
+            print(
+                "[Save Import] Light World stats =",
+                light_stats,
+            )
+
+            data = {
+                "slot": slot,
+                "chapter": 6,
+                "source_chapter": 5,
+
+                "previous_file": (
+                    str(source_path)
+                    if source_path is not None
+                    else None
+                ),
+
+                "kris_preservation_society":
+                    self.kris_preservation_society,
+
+                # Light World state imported from Chapter 5.
+                **light_stats,
+                "LW_inventory": light_inventory,
+
+                "opening_complete": False,
+            }
+
+            is_new_file = True
+
+        else:
+            raise ValueError(
+                f"Unknown File Select handoff: {kind!r}"
+            )
+
+        self.start_opening_scene(
+            slot=slot,
+            save_data=data,
+            is_new_file=is_new_file,
+        )
+
+    def read_deltarune_pc_light_stats(
+        self,
+        save_path,
+    ):
+        """
+        Read DELTARUNE's Light World STAT values from a
+        Windows/PC save file.
+
+        Offsets correspond to the serialization order used
+        by scr_load().
+        """
+
+        defaults = {
+            "lweapon": 0,
+            "larmor": 0,
+            "lxp": 0,
+            "llv": 1,
+            "lgold": 2,
+            "lhp": 20,
+            "lmaxhp": 20,
+            "lat": 10,
+            "ldf": 10,
+            "lwstrength": 0,
+            "ladef": 0,
+        }
+
+        if save_path is None:
+            return defaults.copy()
+
+        try:
+            save_path = Path(save_path)
+
+            lines = save_path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).splitlines()
+
+            offsets = {
+                "lweapon": 525,
+                "larmor": 526,
+                "lxp": 527,
+                "llv": 528,
+                "lgold": 529,
+                "lhp": 530,
+                "lmaxhp": 531,
+                "lat": 532,
+                "ldf": 533,
+                "lwstrength": 534,
+                "ladef": 535,
+            }
+
+            result = defaults.copy()
+
+            for key, line_index in offsets.items():
+
+                if 0 <= line_index < len(lines):
+
+                    raw_value = lines[
+                        line_index
+                    ].strip()
+
+                    result[key] = int(
+                        float(raw_value)
+                    )
+
+            return result
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ):
+            return defaults.copy()
+
+    def read_deltarune_pc_light_inventory(
+        self,
+        save_path,
+    ):
+        """
+        Read the eight global.litem[] slots from a Windows/PC
+        DELTARUNE save.
+
+        After ladef (line 535), PC saves interleave:
+            litem[0], phone[0], litem[1], phone[1], ...
+        The eight litem lines are therefore 536, 538, ... 550.
+        """
+
+        if save_path is None:
+            return []
+
+        try:
+            save_path = Path(save_path)
+
+            lines = save_path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).splitlines()
+
+            inventory = []
+
+            for slot in range(8):
+                line_index = 536 + slot * 2
+
+                if not (0 <= line_index < len(lines)):
+                    break
+
+                item_id = int(
+                    float(
+                        lines[line_index].strip()
+                    )
+                )
+
+                # global.litem uses 0 for an empty slot.
+                if item_id != 0:
+                    inventory.append(item_id)
+
+            return inventory
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ):
+            return []
+
+    def read_deltarune_pc_flag(
+        self,
+        save_path,
+        flag_index,
+        default=0,
+    ):
+        """
+        Read one global.flag[] value from a PC DELTARUNE save.
+
+        This follows the non-console serialization order used
+        by scr_load().
+        """
+
+        if save_path is None:
+            return default
+
+        try:
+            save_path = Path(save_path)
+
+            lines = save_path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).splitlines()
+
+            # PC save structure:
+            #
+            # 552 serialized values appear before flag[0].
+            flag_block_start = 552
+
+            line_index = (
+                flag_block_start
+                + int(flag_index)
+            )
+
+            if not (
+                0 <= line_index < len(lines)
+            ):
+                return default
+
+            raw_value = lines[
+                line_index
+            ].strip()
+
+            return int(float(raw_value))
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ):
+            return default
+
+    # ======================================================
+    # LIGHT WORLD ITEM SYSTEM
+    # ======================================================
+
+    def _play_optional_item_sfx(self, filename):
+        """
+        Play a Light World item sound when the asset exists.
+        Supports both sfx/ and audio/sfx/ project layouts.
+        """
+
+        for directory in (
+            BASE_DIR / "sfx",
+            BASE_DIR / "audio" / "sfx",
+        ):
+            path = directory / filename
+
+            if path.exists():
+                try:
+                    import pygame
+                    pygame.mixer.Sound(
+                        str(path)
+                    ).play()
+                except Exception:
+                    pass
+                return
+
+    def _refresh_light_world_ui(self):
+        try:
+            self.hud.update_text()
+        except Exception:
+            pass
+
+        try:
+            self.menu.render_static()
+            self.menu.render_dynamic()
+        except Exception:
+            pass
+
+    def start_item_dialogue(
+        self,
+        messages,
+        on_complete=None,
+    ):
+        """
+        Hand a menu item action to the normal overworld
+        DialogueBox without modifying room.dialogue.
+        """
+
+        clean_messages = [
+            str(message)
+            for message in messages
+            if str(message)
+        ]
+
+        # Match menuno == 9 behavior: an action exits the
+        # menu and dialogue owns input until it is finished.
+        self.menu.close()
+        self.hud.close()
+
+        if not clean_messages:
+            self.state = "playing"
+
+            if callable(on_complete):
+                on_complete()
+
+            return
+
+        self.state = "item_dialogue"
+        self.item_dialogue_messages = clean_messages
+        self.item_dialogue_index = 0
+        self.item_dialogue_on_complete = on_complete
+
+        self.dialogue_box.clear_portrait()
+        self.dialogue_box.show()
+        self.dialogue_box.update_position()
+        self.dialogue_box.layout_widgets()
+        self.dialogue_box.set_text(
+            self.item_dialogue_messages[0]
+        )
+
+        self.canvas.tag_raise("dialogue")
+
+    def advance_item_dialogue(self):
+        if self.state != "item_dialogue":
+            return
+
+        self.item_dialogue_index += 1
+
+        if (
+            self.item_dialogue_index
+            < len(self.item_dialogue_messages)
+        ):
+            self.dialogue_box.set_text(
+                self.item_dialogue_messages[
+                    self.item_dialogue_index
+                ]
+            )
+            return
+
+        callback = self.item_dialogue_on_complete
+
+        self.dialogue_box.hide()
+        self.item_dialogue_messages = []
+        self.item_dialogue_index = 0
+        self.item_dialogue_on_complete = None
+        self.state = "playing"
+
+        if callable(callback):
+            callback()
+
+    def activate_light_world_item_action(
+        self,
+        inventory_index,
+        action_index,
+    ):
+        """
+        Execute USE / INFO / DROP for the selected litem slot.
+        """
+
+        if not (
+            0 <= inventory_index
+            < len(self.LW_inventory)
+        ):
+            return
+
+        try:
+            action = ITEM_ACTIONS[
+                int(action_index)
+            ]
+        except (IndexError, TypeError, ValueError):
+            return
+
+        item_id = normalize_lw_item_id(
+            self.LW_inventory[
+                inventory_index
+            ]
+        )
+
+        if item_id is None:
+            return
+
+        if action == "USE":
+            messages = self.use_light_world_item(
+                inventory_index,
+                item_id,
+            )
+
+        elif action == "INFO":
+            messages = self.get_light_world_item_info(
+                item_id
+            )
+
+        else:
+            messages = self.drop_light_world_item(
+                inventory_index,
+                item_id,
+            )
+
+        self._refresh_light_world_ui()
+        self.start_item_dialogue(messages)
+
+    def get_light_world_item_info(self, item_id):
+        messages = get_lw_item_description(
+            item_id
+        )
+
+        # scr_litemdesc gives Ball of Junk one extra page
+        # when Dark World item 1 is present.  Support that
+        # automatically if a later system exposes a DW set.
+        if item_id == 5:
+            dark_items = set(
+                getattr(
+                    self,
+                    "dark_world_item_ids",
+                    [],
+                )
+            )
+
+            if 1 in dark_items:
+                messages = [
+                    '* "Ball of Junk" - A small ball of accumulated things in your pocket.',
+                    "* It smells like scratch'n'sniff marshmallow stickers.",
+                ]
+
+        return messages
+
+    def can_equip_light_world_weapon(
+        self,
+        item_id,
+    ):
+        """
+        Original rule: Kris may equip the Light World weapon
+        only when the paired Dark World weapon is owned or
+        equipped.
+
+        The current fangame has no complete DW equipment
+        model yet, so absence of DW tracking means "allow".
+        Once one of these sets exists, the original rule is
+        enforced automatically.
+        """
+
+        dw_id = get_dw_weapon_id(
+            item_id
+        )
+
+        if dw_id is None:
+            return False
+
+        inventory = getattr(
+            self,
+            "dark_world_weapon_ids",
+            None,
+        )
+
+        equipped = getattr(
+            self,
+            "dark_world_equipped_weapon_ids",
+            None,
+        )
+
+        if inventory is None and equipped is None:
+            return True
+
+        inventory = set(inventory or [])
+        equipped = set(equipped or [])
+
+        return (
+            dw_id in inventory
+            or dw_id in equipped
+        )
+
+    def equip_light_world_weapon(
+        self,
+        inventory_index,
+        new_weapon_id,
+    ):
+        """
+        Python equivalent of scr_lweaponeq.
+
+        The selected inventory slot receives the previously
+        equipped Light World weapon, and the selected weapon
+        becomes equipped.
+        """
+
+        old_weapon_id = int(
+            getattr(
+                self,
+                "lweapon",
+                0,
+            )
+        )
+
+        if (
+            0 <= inventory_index
+            < len(self.LW_inventory)
+        ):
+            if old_weapon_id == 0:
+                # global.litem would receive 0.  This project
+                # represents occupied slots as a compact list,
+                # so removing the entry is equivalent.
+                del self.LW_inventory[
+                    inventory_index
+                ]
+            else:
+                self.LW_inventory[
+                    inventory_index
+                ] = old_weapon_id
+
+        self.lweapon = int(
+            new_weapon_id
+        )
+
+        self.lwstrength = (
+            get_lw_weapon_strength(
+                self.lweapon
+            )
+        )
+
+    def recover_light_world_hp(
+        self,
+        amount,
+    ):
+        """
+        Exact scr_lrecover semantics.
+
+        Note: reaching max HP sets maxed_out=True, even when
+        HP was actually recovered on that use.
+        """
+
+        amount = int(amount)
+        recovered = amount
+        maxed_out = False
+
+        if self.lhp < self.lmaxhp:
+            self.lhp += amount
+        else:
+            maxed_out = True
+
+        if (
+            self.lhp >= self.lmaxhp
+            and not maxed_out
+        ):
+            self.lhp = self.lmaxhp
+            maxed_out = True
+
+        return recovered, maxed_out
+
+    def _consume_lw_inventory_slot(
+        self,
+        inventory_index,
+    ):
+        if (
+            0 <= inventory_index
+            < len(self.LW_inventory)
+        ):
+            del self.LW_inventory[
+                inventory_index
+            ]
+
+    def use_light_world_item(
+        self,
+        inventory_index,
+        item_id,
+    ):
+        """
+        Common scr_litemuseb behavior.
+
+        Chapter-5-only NPC/room branches are intentionally
+        left as future context hooks; their ordinary fallback
+        behavior is implemented here.
+        """
+
+        item_id = int(item_id)
+
+        # ------------------------------
+        # Weapons
+        # ------------------------------
+        if is_lw_weapon(item_id):
+
+            if not self.can_equip_light_world_weapon(
+                item_id
+            ):
+                return [
+                    "* For some reason you couldn't equip it."
+                ]
+
+            name = get_lw_item_name(
+                item_id
+            )
+
+            self.equip_light_world_weapon(
+                inventory_index,
+                item_id,
+            )
+
+            self._play_optional_item_sfx(
+                "snd_item.wav"
+            )
+
+            return [
+                f"* You equipped the {name}."
+            ]
+
+        # ------------------------------
+        # Other Light World items
+        # ------------------------------
+        if item_id == 1:
+            self._play_optional_item_sfx(
+                "snd_swallow.wav"
+            )
+
+            self._consume_lw_inventory_slot(
+                inventory_index
+            )
+
+            return [
+                "* You drank the hot chocolate.\n"
+                "* It tasted wonderful.\n"
+                "* Your throat tightened..."
+            ]
+
+        if item_id == 3:
+            recovered, maxed_out = (
+                self.recover_light_world_hp(
+                    1
+                )
+            )
+
+            self._consume_lw_inventory_slot(
+                inventory_index
+            )
+
+            if maxed_out:
+                recovery_text = (
+                    "* Your HP was maxed out."
+                )
+            else:
+                recovery_text = (
+                    f"* You recovered {recovered} HP!"
+                )
+
+            return [
+                "* You re-applied the bandage.\n"
+                + recovery_text
+            ]
+
+        if item_id == 4:
+            return [
+                "* You held out the flowers.\n"
+                "* A floral scent fills the air.\n"
+                "* Nothing happened."
+            ]
+
+        if item_id == 5:
+            return [
+                "* You looked at the junk ball in admiration.\n"
+                "* Nothing happened."
+            ]
+
+        if item_id == 8:
+            self._play_optional_item_sfx(
+                "snd_egg.wav"
+            )
+            return [
+                "* You used the Egg."
+            ]
+
+        if item_id == 9:
+            return [
+                "* You held the cards.\n"
+                "* They felt flimsy between your fingers."
+            ]
+
+        if item_id == 10:
+            # This is the default Kris-alone branch from
+            # scr_litemuseb.  NPC/party-specific Chapter 5
+            # branches can override this later.
+            self._consume_lw_inventory_slot(
+                inventory_index
+            )
+
+            self.lhp = 19
+            self.light_world_flags[
+                342
+            ] = 1
+
+            return [
+                "* (You unhesitatingly devoured the box of heart shaped candies.)",
+                "* (Your guts are being destroyed.)",
+                "* (You accept this destruction as part of life...)",
+            ]
+
+        if item_id == 11:
+            return [
+                "* It doesn't seem very useful."
+            ]
+
+        # There is no case 14 in scr_litemuseb.
+        # Selecting USE on Wristwatch therefore creates no
+        # item dialogue and simply exits the menu action.
+        if item_id == 14:
+            return []
+
+        if item_id == 19:
+            return [
+                "* (You held it up in the air.)"
+            ]
+
+        if item_id == 20:
+            return [
+                "* (Bread.)"
+            ]
+
+        if item_id == 21:
+            return [
+                "* (You cannot use it right now.)"
+            ]
+
+        if item_id == 0:
+            return [
+                "* You grasped at nothing."
+            ]
+
+        return []
+
+    def drop_light_world_item(
+        self,
+        inventory_index,
+        item_id,
+    ):
+        """
+        obj_overworldc DROP behavior for the normal
+        Light World state.
+        """
+
+        item_id = int(item_id)
+        name = get_lw_item_name(
+            item_id
+        )
+
+        # ------------------------------
+        # Protected items
+        # ------------------------------
+        if item_id == 5:
+            # The original delegates this one to scr_text(10);
+            # that script was not among the recovered sources.
+            return [
+                "* You couldn't throw the Ball of Junk away."
+            ]
+
+        if item_id == 9:
+            return [
+                "* (You fumbled and caught them. You can't throw these away!)"
+            ]
+
+        if item_id == 11:
+            return [
+                "* (For some reason you felt like if you throw it away...)",
+                "* (It would be like throwing away someone's... ???)",
+                "* (... but you didn't fully understand it.)",
+            ]
+
+        if item_id == 21:
+            return [
+                "* (The seeds stick to everything and cannot be thrown away.)"
+            ]
+
+        if is_lw_weapon(
+            item_id
+        ):
+            return [
+                "* (Recently, seems like weapons can't be thrown away so easily.)"
+            ]
+
+        # ------------------------------
+        # Successful drop
+        # ------------------------------
+        if item_id == 8:
+            message = "* What Egg?"
+
+            if (
+                self.light_world_flags.get(
+                    263,
+                    0,
+                )
+                == 0
+            ):
+                self.light_world_flags[
+                    263
+                ] = 1
+
+        else:
+            roll = random.randint(
+                0,
+                30,
+            )
+
+            if roll == 0:
+                message = (
+                    f"* You bid a quiet farewell to the {name}."
+                )
+            elif roll == 1:
+                message = (
+                    f"* You put the {name} on the ground "
+                    "and gave it a little pat."
+                )
+            elif roll == 2:
+                message = (
+                    f"* You threw the {name} on the ground "
+                    "like the piece of trash it is."
+                )
+            elif roll == 3:
+                message = (
+                    f"* You abandoned the {name}."
+                )
+            else:
+                message = (
+                    f"* The {name} was thrown away."
+                )
+
+        if item_id == 19:
+            self.light_world_flags[
+                1710
+            ] = 1
+
+        self._consume_lw_inventory_slot(
+            inventory_index
+        )
+
+        return [
+            message
+        ]
+
     def _set_file_menu_visible(self, visible):
         """
         FileMenu predates the new startup state machine, so this helper works
@@ -713,7 +1765,25 @@ class Game:
         self.dialogue_box.show()
         self.type_text()
     def load_dialogue(self):
-        self.dialogue_index = 0 
+        self.dialogue_index = 0
+        self.dialogue_data = {}
+
+        dialogue_path = BASE_DIR / "eng.json"
+
+        if dialogue_path.exists():
+            try:
+                with open(
+                    dialogue_path,
+                    "r",
+                    encoding="utf-8",
+                ) as file:
+                    self.dialogue_data = json.load(file)
+            except (
+                OSError,
+                json.JSONDecodeError,
+            ):
+                self.dialogue_data = {}
+
         self.dialogue_box = DialogueBox(self)
     def interact(self, event = None):
         if self.dialogue_active:
@@ -918,7 +1988,16 @@ class Game:
 
         # print(f"Loaded room: {room.name}") #Debug for room loading, keep this commented out unless testing room loading.
 
-        self.background_pil = Image.open(background_path)
+        self.background_pil = Image.open(background_path).convert("RGBA")
+
+        # OpeningScene owns temporary night/day variants without requiring a
+        # duplicate Room definition. Once real daytime art exists, its single
+        # DAY_ROOM_BACKGROUND setting replaces the placeholder treatment.
+        if hasattr(self, "opening_scene"):
+            self.background_pil = self.opening_scene.apply_room_variant(
+                room_id,
+                self.background_pil,
+            )
         self.game_width = self.background_pil.width
         self.game_height = self.background_pil.height
         self.update_scale()
@@ -928,7 +2007,8 @@ class Game:
         else: 
             self.canvas.itemconfig(self.background_sprite, image=self.background_image)
         if hasattr(self, "player"):
-            self.canvas.tag_raise(self.player.canvas_sprite)
+            if self.player.canvas_sprite is not None:
+                self.canvas.tag_raise(self.player.canvas_sprite)
             self.player.room = room
             if facing_direction is not None:
                 self.player.facing = facing_direction
@@ -972,6 +2052,10 @@ class Game:
         elif self.state == "file_select":
             self._set_file_menu_visible(True)
 
+        elif self.state == "opening_scene":
+            self._set_file_menu_visible(False)
+            self.opening_scene.render()
+
         if self.fade_alpha > 0:
             self.render_fade()
 
@@ -1004,6 +2088,9 @@ class Game:
         ):
             self.active_startup_screen.render()
 
+        if self.state == "opening_scene":
+            self.opening_scene.render()
+
     def render_dynamic(self):
         # Startup screens own the full Canvas. Do not render Kris/HUD/menu on
         # top of them.
@@ -1018,6 +2105,10 @@ class Game:
         if self.state == "file_select":
             self._set_file_menu_visible(True)
             self.render_fade()
+            return
+
+        if self.state == "opening_scene":
+            self.opening_scene.render()
             return
 
         self.render_background_dynamic()
@@ -1154,7 +2245,11 @@ class Game:
         # room, menu, dialogue, startup screens, and fades.
         self.canvas.tag_raise(self.quittingSprite)
     def render_fade(self):
-        if self.fade_alpha <= 0:
+        # Cutscene lerps intentionally produce fractional values, but Pillow's
+        # RGBA channels require integers.  Convert only at render time so the
+        # underlying fade remains smooth and reusable by the cutscene system.
+        render_alpha = max(0, min(255, int(round(self.fade_alpha))))
+        if render_alpha <= 0:
             self.canvas.itemconfigure(
                 self.fade_overlay,
                 state="hidden"
@@ -1167,7 +2262,7 @@ class Game:
         fade_image = Image.new(
             "RGBA",
             (width, height),
-            (0, 0, 0, self.fade_alpha)
+            (0, 0, 0, render_alpha)
         )
         self.fade_photo = ImageTk.PhotoImage(fade_image)
         self.canvas.itemconfigure(
@@ -1287,7 +2382,16 @@ class Game:
         #call the room's dialogue list and get the current dialogue object
         current = self.room.dialogue[self.dialogue_index]
         voice = current.voice
-        text = self.dialogue_data.get(current.text_id,current.text_id)
+        dialogue_data = getattr(
+            self,
+            "dialogue_data",
+            {},
+        )
+
+        text = dialogue_data.get(
+            current.text_id,
+            current.text_id,
+        )
         current_choices = current.choices
         scene_id = current.scene_id
         sound_effect = current.sound_effect
@@ -1308,12 +2412,46 @@ class Game:
             self.typing_job = None
             if current_choices: #if the current dialogue has a choice, display them
                 self.show_choices(current_choices)
-    def advance_dialogue(self, event):
+    def advance_dialogue(self, event=None):
+        if self.state == "item_dialogue":
+            self.advance_item_dialogue()
+            return
+
         if self.state != "playing":
             return
+
         if self.choice_active:
             return
-        current = self.room.dialogue[self.dialogue_index]
+
+        # Normal Z/Space presses in the overworld must not
+        # advance room dialogue unless a room dialogue is
+        # actually active/visible.
+        if not (
+            self.dialogue_box.visible
+            or self.typing
+            or self.dialogue_active
+        ):
+            return
+
+        room_dialogue = getattr(
+            self.room,
+            "dialogue",
+            [],
+        )
+
+        if not room_dialogue:
+            return
+
+        if not (
+            0 <= self.dialogue_index
+            < len(room_dialogue)
+        ):
+            self.dialogue_index = 0
+            return
+
+        current = room_dialogue[
+            self.dialogue_index
+        ]
         text = current.text_id
         
         #if the player presses the advance key while text is still being typed, finish typing it instantly
@@ -1338,6 +2476,8 @@ class Game:
         else: # no more dialogue is left, so close the dialogue box
             self.dialogue_box.hide()
             self.typing = False
+            self.dialogue_active = False
+            self.dialogue_blocks_movement = False
             self.character_index = 0
             self.dialogue_index = 0
     def start_dialogue(self):
@@ -1364,21 +2504,38 @@ class Game:
                 elif obj.action == "sound": #noisemakers
                     self.audio.play_sound(obj.data)
                 break
-    def handle_z(self, event = None):
+    def handle_z(self, event=None):
         if self.transitioning:
             return
+
+        if self.state == "item_dialogue":
+            self.advance_item_dialogue()
+            return
+
         if self.state == "menu":
             self.menu.confirm()
             return
-        self.advance_dialogue(event)
+
+        if self.state != "playing":
+            return
+
+        # One Z press should either advance an already-open
+        # dialogue OR inspect/interact with the overworld.
+        if (
+            self.dialogue_box.visible
+            or self.typing
+            or self.dialogue_active
+            or self.choice_active
+        ):
+            self.advance_dialogue(event)
+            return
+
         self.interact(event)
-        # print(interaction_box) #Uncomment only if you want the dimensions of the interaction box to be printed in the terminal window
     def bind_keys(self):
         self.root.bind("<KeyPress>", self.key_press)
         self.root.bind("<KeyRelease>", self.key_release)
         # self.root.bind("<KeyRelease-Escape>", self.quit_game_release)
-        self.root.bind("<space>", self.advance_dialogue)
-        self.root.bind("<space>", self.interact)
+        self.root.bind("<space>", self.handle_z)
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         key = event.keysym
@@ -1421,6 +2578,14 @@ class Game:
             # Do not allow file-select keys to leak into Kris/menu controls.
             return
 
+        # --------------------------------------------------
+        # Playable opening (SOUL only)
+        # --------------------------------------------------
+        if self.state == "opening_scene":
+            # Direction state is already recorded in keys_pressed above. The
+            # opening controller reads held keys once per logical frame.
+            return
+
         # C = menu open / close
         if key == "c":
             self.toggle_menu()
@@ -1436,6 +2601,12 @@ class Game:
                 return
             elif key == "Down":
                 self.menu.move_down()
+                return
+            elif key == "Left":
+                self.menu.move_left()
+                return
+            elif key == "Right":
+                self.menu.move_right()
                 return
             elif key == "x":
                 self.handle_menu_back()
@@ -1562,16 +2733,20 @@ class Game:
                 (in addition to copyright info and stuff)
             -not sure how much we wanna put into language support, but the modes of language should have a unique character set
     '''
-    def load(self, slot):
-        # Load the game from the specified slot
-        # first we find our save file
+    def load(self, slot, start_game=True):
+        """Load a slot and, when selected by File Menu, start the opening."""
         filename = f"filech6_{slot}.json"
-        
-        #then we fetch the data
+
         with open(filename, "r") as file:
             data = json.load(file)
-                
-        #then give it a return and handle it in the main menu
+
+        if start_game:
+            self.start_opening_scene(
+                slot=slot,
+                save_data=data,
+                is_new_file=False,
+            )
+
         return data
 
     def save(self, slot, data):
@@ -1595,16 +2770,29 @@ class Game:
         pass
     def copy(self, source_slot, target_slot):
         # Copy the game from source_slot to target_slot
-        loaded_data = self.load(source_slot)
+        # Reading for a copy must not launch the selected slot.
+        loaded_data = self.load(source_slot, start_game=False)
         self.save(target_slot, loaded_data)
         #pretty neat to reuse save functions, right?
         
         print(f"Save slot {source_slot} copied to {target_slot}.") #temp for ensuring things work, delete later
         pass
-    def new(self, slot):
-        # Create a new save slot from a possible DltRn chapter 5 save file, or just a blank save file if none is provided
-        # TODO
-        pass
+    def new(self, slot, start_game=True):
+        # Previous-chapter carry-over data can be added here later. Both new
+        # and completed-source files intentionally share the same prologue.
+        data = {
+            "slot": slot,
+            "chapter": 6,
+            "room": "myroom",
+            "opening_complete": False,
+        }
+        if start_game:
+            self.start_opening_scene(
+                slot=slot,
+                save_data=data,
+                is_new_file=True,
+            )
+        return data
     def change_language(self, language):
         # Change the language of the game
         # TODO
@@ -1689,6 +2877,15 @@ class Game:
             self.root.after(32, self.update)
             return
 
+        # --------------------------------------------------
+        # Chapter 6 playable opening
+        # --------------------------------------------------
+        if self.state == "opening_scene":
+            self.opening_scene.update()
+            self.renderQuit()
+            self.root.after(self.opening_scene.FRAME_MS, self.update)
+            return
+
         if self.state == "playing":
             movement_keys_held = bool(
                 self.keys_pressed & {"Left", "Right", "Up", "Down"}
@@ -1768,6 +2965,25 @@ class Game:
             self.render_dynamic()
             self.player.animation.update()
             self.check_dialogue_triggers()
+
+        elif self.state == "item_dialogue":
+            # Item dialogue owns input.  Keep the room/player visible,
+            # but freeze movement, room transitions, and menu navigation.
+            self.update_camera()
+            self.render_background_dynamic()
+
+            if hasattr(self, "player"):
+                self.player.render()
+
+            if self.dialogue_box.visible:
+                self.dialogue_box.update_position()
+                self.dialogue_box.layout_widgets()
+                self.canvas.tag_raise("dialogue")
+
+            self.render_debug_dynamic()
+            self.update_debug_hud()
+            self.canvas.tag_raise(self.debug_text)
+            self.render_fade()
 
         elif self.state == "menu":
             # Keep the camera/UI alive, but do not run room transitions,

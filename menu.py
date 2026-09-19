@@ -1,6 +1,12 @@
 import pygame
 from pathlib import Path
 from PIL import Image, ImageTk
+from lw_items import (
+    ITEM_ACTION_CURSOR_POSITIONS,
+    LW_ARMOR_NAMES,
+    LW_WEAPON_NAMES,
+    get_lw_item_name,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -13,6 +19,46 @@ cursor_path = (
     / "spr_heartsmall.png"
 )
 
+WEAPON_NAMES = {
+    2: "Pencil",
+    6: "Halloween Pencil",
+    7: "Lucky Pencil",
+    12: "Eraser",
+    13: "Mech. Pencil",
+    15: "Holiday Pencil",
+    16: "CactusNeedle",
+    17: "BlackShard",
+    18: "QuillPen",
+    22: "Pencil2",
+    23: "Petal",
+}
+
+ARMOR_NAMES = {
+    3: "Bandage",
+    14: "Wristwatch",
+}
+
+EXP_THRESHOLDS = {
+    1: 10,
+    2: 30,
+    3: 70,
+    4: 120,
+    5: 200,
+    6: 300,
+    7: 500,
+    8: 800,
+    9: 1200,
+    10: 1700,
+    11: 2500,
+    12: 3500,
+    13: 5000,
+    14: 7000,
+    15: 10000,
+    16: 15000,
+    17: 25000,
+    18: 50000,
+    19: 99999,
+}
 
 class Menu:
     def __init__(self, game):
@@ -45,6 +91,10 @@ class Menu:
 
         self.item_text = []
         self.action_text = []
+
+        self.stat_text = {}
+        self.stat_font_images = {}
+
         self.main_font_images = {}
         self.action_font_images = {}
 
@@ -61,6 +111,7 @@ class Menu:
 
         self.selected = 0
         self.item_selected = 0
+        self.item_action_selected = 0
 
         self.options = [
             "ITEM",
@@ -93,6 +144,27 @@ class Menu:
         # ==================================================
         self.stat_menu_x = 94
         self.stat_menu_y = 26
+
+        self.stat_positions = {
+        "name": (108, 42),
+
+        "lv": (108, 72),
+        "hp": (108, 88),
+
+        "at": (108, 120),
+        "df": (108, 136),
+
+        "weapon": (108, 166),
+        "armor": (108, 182),
+        "money": (108, 202),
+
+        # Right-hand column.
+        "special_1": (192, 42),
+        "special_2": (192, 58),
+
+        "exp": (192, 120),
+        "next": (192, 136),
+        }
 
         # ==================================================
         # Soul cursor
@@ -135,22 +207,112 @@ class Menu:
 
     def get_item_name(self, item):
         """
-        Convert an inventory entry into the text displayed
-        in the Item menu.
+        Convert an inventory entry into the canonical
+        Light World item name.
+
+        Numeric item IDs are now preferred, but legacy
+        string/dict entries remain supported while older
+        save/test data is being migrated.
         """
 
-        if isinstance(item, dict):
-            return str(
-                item.get(
-                    "name",
-                    ""
-                )
-            )
-
-        return str(item)
+        return get_lw_item_name(item)
 
     def has_items(self):
         return len(self.get_inventory()) > 0
+
+    # ======================================================
+    # OVERWORLD STATS
+    # ======================================================
+
+    def get_stat_data(self):
+        """
+        Return the Light World stats displayed by the
+        overworld STAT menu.
+
+        Names intentionally correspond to DELTARUNE's
+        global.l* variables.
+        """
+
+        return {
+            "name": getattr(
+                self.game,
+                "lcharname",
+                "Kris"
+            ),
+
+            "lv": getattr(
+                self.game,
+                "llv",
+                1
+            ),
+
+            "hp": getattr(
+                self.game,
+                "lhp",
+                20
+            ),
+
+            "max_hp": getattr(
+                self.game,
+                "lmaxhp",
+                20
+            ),
+
+            "at": getattr(
+                self.game,
+                "lat",
+                10
+            ),
+
+            "weapon_strength": getattr(
+                self.game,
+                "lwstrength",
+                0
+            ),
+
+            "df": getattr(
+                self.game,
+                "ldf",
+                2
+            ),
+
+            "armor_defense": getattr(
+                self.game,
+                "ladef",
+                0
+            ),
+
+            "weapon": getattr(
+                self.game,
+                "lweapon",
+                0
+            ),
+
+            "armor": getattr(
+                self.game,
+                "larmor",
+                0
+            ),
+
+            "gold": getattr(
+                self.game,
+                "lgold",
+                2
+            ),
+
+            "xp": getattr(
+                self.game,
+                "lxp",
+                0
+            ),
+
+            # Corresponds to global.flag[914].
+            "kris_preservation_society": getattr(
+                self.game,
+                "kris_preservation_society",
+                0
+            ),
+        }
 
     # ======================================================
     # OPTION STATE
@@ -280,6 +442,22 @@ class Menu:
         )
 
         # --------------------------------------------------
+        # Stat menu text
+        # --------------------------------------------------
+
+        for key in self.stat_positions:
+
+            text = self.game.canvas.create_image(
+                0,
+                0,
+                anchor="nw",
+                state="hidden",
+                tags=("menu",)
+            )
+
+            self.stat_text[key] = text
+
+        # --------------------------------------------------
         # Soul cursor
         # --------------------------------------------------
 
@@ -295,10 +473,6 @@ class Menu:
         # --------------------------------------------------
         # Main menu options
         # --------------------------------------------------
-
-# --------------------------------------------------
-# Main menu options
-# --------------------------------------------------
 
         for option in self.options:
 
@@ -361,7 +535,8 @@ class Menu:
                 self.cursor,
                 *self.option_text,
                 *self.item_text,
-                *self.action_text
+                *self.action_text,
+                *self.stat_text.values(),
             ]
         )
 
@@ -431,6 +606,25 @@ class Menu:
             x,
             y
         )
+
+        # --------------------------------------------------
+        # Stat menu text
+        # --------------------------------------------------
+
+        for key, text in self.stat_text.items():
+
+            native_x, native_y = self.stat_positions[key]
+
+            x, y = self.game.ui_to_screen(
+                native_x,
+                native_y
+            )
+
+            self.game.canvas.coords(
+                text,
+                x,
+                y
+            )
 
         # --------------------------------------------------
         # Inventory items
@@ -515,7 +709,7 @@ class Menu:
         # --------------------------------------------------
 
         item_visible = (
-            self.screen == "item"
+            self.screen in ("item", "item_action")
         )
 
         self.game.canvas.itemconfigure(
@@ -551,7 +745,7 @@ class Menu:
             self.cursor,
             state=(
                 "normal"
-                if self.screen in ("main", "item")
+                if self.screen in ("main", "item", "item_action")
                 else "hidden"
             )
         )
@@ -567,6 +761,16 @@ class Menu:
                 else "hidden"
             )
         )
+
+        for text in self.stat_text.values():
+            self.game.canvas.itemconfigure(
+                text,
+                state=(
+                    "normal"
+                    if stat_visible
+                    else "hidden"
+                )
+            )
 
     # ======================================================
     # OPEN / CLOSE
@@ -611,7 +815,7 @@ class Menu:
             self.move_item_up()
             return
 
-        if self.screen == "stat":
+        if self.screen in ("item_action", "stat"):
             return
 
         # Already at the top.
@@ -644,7 +848,7 @@ class Menu:
             self.move_item_down()
             return
 
-        if self.screen == "stat":
+        if self.screen in ("item_action", "stat"):
             return
 
         # Already at the bottom.
@@ -703,6 +907,38 @@ class Menu:
             self.menu_move.play()
             self.render_dynamic()
 
+    def move_left(self):
+        """Move left across USE / INFO / DROP."""
+
+        if not self.visible:
+            return
+
+        if self.screen != "item_action":
+            return
+
+        if self.item_action_selected <= 0:
+            return
+
+        self.item_action_selected -= 1
+        self.menu_move.play()
+        self.render_dynamic()
+
+    def move_right(self):
+        """Move right across USE / INFO / DROP."""
+
+        if not self.visible:
+            return
+
+        if self.screen != "item_action":
+            return
+
+        if self.item_action_selected >= 2:
+            return
+
+        self.item_action_selected += 1
+        self.menu_move.play()
+        self.render_dynamic()
+
     # ======================================================
     # CONFIRM / BACK
     # ======================================================
@@ -759,18 +995,51 @@ class Menu:
 
         if self.screen == "item":
 
-            # Item actions will be implemented next.
-            #
-            # For now, pressing Z while an item is selected
-            # simply plays the selection sound.
             inventory = self.get_inventory()
 
             if inventory:
                 self.menu_select.play()
+                self.screen = "item_action"
+                self.item_action_selected = 0
+                self.render_dynamic()
+                self.update_visibility()
+                self.game.canvas.tag_raise("menu")
+
+            return
+
+        # --------------------------------------------------
+        # USE / INFO / DROP row
+        # --------------------------------------------------
+
+        if self.screen == "item_action":
+
+            inventory = self.get_inventory()
+
+            if not inventory:
+                self.screen = "main"
+                self.normalize_selection()
+                self.render_static()
+                self.render_dynamic()
+                self.update_visibility()
+                return
+
+            self.game.activate_light_world_item_action(
+                self.item_selected,
+                self.item_action_selected,
+            )
+            return
 
     def back(self):
 
         if not self.visible:
+            return
+
+        if self.screen == "item_action":
+            self.screen = "item"
+            self.render_static()
+            self.render_dynamic()
+            self.update_visibility()
+            self.game.canvas.tag_raise("menu")
             return
 
         if self.screen in ("item", "stat", "cell"):
@@ -788,6 +1057,163 @@ class Menu:
             self.game.canvas.tag_raise(
                 "menu"
             )
+
+    def render_stat_screen(self):
+
+        if not self.stat_text:
+            return
+
+        main_font = self.game.ui_sprites.main_font
+
+        stats = self.get_stat_data()
+
+        name = str(stats["name"])
+        lv = int(stats["lv"])
+        hp = int(stats["hp"])
+        max_hp = int(stats["max_hp"])
+
+        at = int(stats["at"])
+        weapon_strength = int(
+            stats["weapon_strength"]
+        )
+
+        df = int(stats["df"])
+        armor_defense = int(
+            stats["armor_defense"]
+        )
+
+        weapon_id = int(stats["weapon"])
+        armor_id = int(stats["armor"])
+
+        gold = int(stats["gold"])
+        xp = int(stats["xp"])
+
+        self.kris_preservation_society = int(
+            stats["kris_preservation_society"]
+        )
+
+        # --------------------------------------------------
+        # Equipment names
+        # --------------------------------------------------
+
+        weapon_name = LW_WEAPON_NAMES.get(
+            weapon_id,
+            "None"
+        )
+
+        armor_name = LW_ARMOR_NAMES.get(
+            armor_id,
+            "None"
+        )
+
+        # --------------------------------------------------
+        # EXP until next LV
+        # --------------------------------------------------
+
+        if lv >= 20:
+            next_level = 0
+
+        else:
+            threshold = EXP_THRESHOLDS.get(
+                lv
+            )
+
+            if threshold is None:
+                next_level = 0
+            else:
+                next_level = threshold - xp
+
+        # --------------------------------------------------
+        # Main STAT text
+        # --------------------------------------------------
+
+        values = {
+            "name": f"\"{name}\"",
+
+            "lv": f"LV  {lv}",
+            "hp": f"HP  {hp} / {max_hp}",
+
+            "at": (
+                f"AT  {at} "
+                f"({weapon_strength})"
+            ),
+
+            "df": (
+                f"DF  {df} "
+                f"({armor_defense})"
+            ),
+
+            "weapon": (
+                f"WEAPON: {weapon_name}"
+            ),
+
+            "armor": (
+                f"ARMOR: {armor_name}"
+            ),
+
+            "money": f"MONEY: {gold}",
+
+            "exp": f"EXP: {xp}",
+            "next": f"NEXT: {next_level}",
+
+            "special_1": "",
+            "special_2": "",
+        }
+
+        # --------------------------------------------------
+        # Top-right special text
+        #
+        # GML:
+        #
+        # if string_length(lcharname) >= 7:
+        #     ???
+        #
+        # else if flag[914] > 0:
+        #     Since
+        #     Chapter X
+        # --------------------------------------------------
+
+        if len(name) >= 7:
+
+            values["special_1"] = "???"
+
+        elif self.kris_preservation_society > 0:
+
+            values["special_1"] = "Since"
+            values["special_2"] = (
+                f"Chapter {self.kris_preservation_society}"
+            )
+
+        # --------------------------------------------------
+        # Render
+        # --------------------------------------------------
+
+        for key, value in values.items():
+
+            if value:
+
+                image = main_font.render(
+                    value
+                )
+
+                self.stat_font_images[key] = image
+
+                self.game.canvas.itemconfigure(
+                    self.stat_text[key],
+                    image=image
+                )
+
+            else:
+
+                self.stat_font_images.pop(
+                    key,
+                    None
+                )
+
+                self.game.canvas.itemconfigure(
+                    self.stat_text[key],
+                    image=""
+                )
 
     # ======================================================
     # RENDERING
@@ -853,6 +1279,8 @@ class Menu:
             self.menu_sprite_stat,
             image=stat_menu_photo
         )
+
+        self.render_stat_screen()
 
         # --------------------------------------------------
         # Refresh cursor
@@ -961,8 +1389,27 @@ class Menu:
                 + self.item_selected * 16
             )
 
+        elif self.screen == "item_action":
+
+            cursor_x, cursor_y = (
+                ITEM_ACTION_CURSOR_POSITIONS[
+                    self.item_action_selected
+                ]
+            )
+
+        elif self.screen == "stat":
+
+            # STAT has no cursor, but its values may have
+            # changed while the menu is open.
+            self.render_stat_screen()
+
+            self.game.canvas.tag_raise(
+                "menu"
+            )
+
+            return
+
         else:
-            # STAT has no cursor.
             return
 
         x, y = self.game.ui_to_screen(

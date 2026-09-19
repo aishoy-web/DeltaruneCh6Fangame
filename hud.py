@@ -139,20 +139,50 @@ class HUD:
     def update_text(self):
 
         # --------------------------------
-        # Generate main-font image
+        # Synchronize with Light World state
         # --------------------------------
 
+        self.level = getattr(
+            self.game,
+            "llv",
+            1
+        )
+
+        self.hp = getattr(
+            self.game,
+            "lhp",
+            20
+        )
+
+        self.max_hp = getattr(
+            self.game,
+            "lmaxhp",
+            20
+        )
+
+        self.money = getattr(
+            self.game,
+            "lgold",
+            2
+        )
+
+        # --------------------------------
+        # Fonts
+        # --------------------------------
+
+        small_font = self.game.ui_sprites.small_font
         main_font = self.game.ui_sprites.main_font
 
+        # IMPORTANT:
+        # This must exist before
+        # self.main_font_images["Kris"] is used.
         self.main_font_images["Kris"] = (
             main_font.render("Kris")
         )
 
         # --------------------------------
-        # Generate small-font images
+        # Small-font images
         # --------------------------------
-
-        small_font = self.game.ui_sprites.small_font
 
         self.small_font_images["LV"] = (
             small_font.render("LV")
@@ -215,7 +245,9 @@ class HUD:
 
         self.game.canvas.itemconfigure(
             self.money_label,
-            image=self.small_font_images["money_label"]
+            image=self.small_font_images[
+                "money_label"
+            ]
         )
 
         self.game.canvas.itemconfigure(
