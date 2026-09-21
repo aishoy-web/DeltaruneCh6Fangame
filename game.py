@@ -13,6 +13,7 @@ from hud import HUD
 from player import Player
 from fileselect import FileMenu
 from dialogue_box import DialogueBox
+from dialogue import DialogueWriter
 import json
 from audiomanager import AudioManager
 from menu import Menu
@@ -125,9 +126,11 @@ class Game:
         # print("UISpriteSheet has get:", hasattr(UISpriteSheet, "get"))
         self.ui_sprites = UISpriteSheet(self)
         self.hud = HUD(self)
+        # DialogueWriter is now the authoritative typewriter.
+        # These legacy fields remain synchronized for compatibility
+        # with older room/cutscene code that may still inspect them.
         self.character_index = 0
         self.typewriter_timer = 0
-        self.dialogue_active = False
         self.dialogue_active = False
         self.dialogue_blocks_movement = False
         self.current_dialogue = None
@@ -270,12 +273,9 @@ class Game:
         # Numeric Light World flags used by item-specific behavior.
         self.light_world_flags = {}
 
-        # Item dialogue is separate from room-script dialogue so menu
-        # actions can hand control to the existing DialogueBox without
-        # mutating room.dialogue.
-        self.item_dialogue_messages = []
-        self.item_dialogue_index = 0
-        self.item_dialogue_on_complete = None
+        # ITEM / INFO / DROP dialogue now uses the same DialogueWriter
+        # as room and trigger dialogue.  No separate Tk after() typewriter
+        # state is needed here.
         
         # Create basic game objects
         self.load_room("mainMenu", play_music=False)
@@ -596,7 +596,12 @@ class Game:
             pass
 
         try:
-            self.dialogue_box.hide()
+            if self.dialogue_writer.active:
+                self.dialogue_writer.stop(
+                    hide_box=True
+                )
+            else:
+                self.dialogue_box.hide()
         except Exception:
             pass
 
@@ -1133,14 +1138,30 @@ class Game:
         except Exception:
             pass
 
+    def _finish_item_dialogue(
+        self,
+        on_complete=None,
+    ):
+        """
+        Return control to the overworld after an ITEM/INFO/DROP writer
+        finishes.  The menu and its HUD remain closed, matching the
+        original menuno == 9 handoff.
+        """
+
+        self.state = "playing"
+        self._sync_dialogue_compat_state()
+
+        if callable(on_complete):
+            on_complete()
+
     def start_item_dialogue(
         self,
         messages,
         on_complete=None,
     ):
         """
-        Hand a menu item action to the normal overworld
-        DialogueBox without modifying room.dialogue.
+        Route ITEM / INFO / DROP text through the same DialogueWriter
+        used by ordinary room dialogue.
         """
 
         clean_messages = [
@@ -1149,8 +1170,6 @@ class Game:
             if str(message)
         ]
 
-        # Match menuno == 9 behavior: an action exits the
-        # menu and dialogue owns input until it is finished.
         self.menu.close()
         self.hud.close()
 
@@ -1162,48 +1181,46 @@ class Game:
 
             return
 
+        # Item actions do not use room.dialogue and therefore do not set
+        # dialogue_active/dialogue_blocks_movement. The explicit state owns
+        # the input/movement lock instead.
         self.state = "item_dialogue"
-        self.item_dialogue_messages = clean_messages
-        self.item_dialogue_index = 0
-        self.item_dialogue_on_complete = on_complete
+        self.dialogue_active = False
+        self.dialogue_blocks_movement = False
+        self.choice_active = False
 
         self.dialogue_box.clear_portrait()
-        self.dialogue_box.show()
-        self.dialogue_box.update_position()
-        self.dialogue_box.layout_widgets()
-        self.dialogue_box.set_text(
-            self.item_dialogue_messages[0]
+
+        self.dialogue_writer.start(
+            clean_messages,
+            typer=1,
+            on_complete=lambda: self._finish_item_dialogue(
+                on_complete
+            ),
+            auto_close=True,
+            show_box=True,
         )
 
+        self._sync_dialogue_compat_state()
         self.canvas.tag_raise("dialogue")
 
     def advance_item_dialogue(self):
+        """
+        Z/Space behavior is now owned by DialogueWriter:
+            typing -> reveal the current page
+            finished -> advance
+            final page -> close
+        """
+
         if self.state != "item_dialogue":
             return
 
-        self.item_dialogue_index += 1
-
-        if (
-            self.item_dialogue_index
-            < len(self.item_dialogue_messages)
-        ):
-            self.dialogue_box.set_text(
-                self.item_dialogue_messages[
-                    self.item_dialogue_index
-                ]
-            )
+        if not self.dialogue_writer.active:
+            self._finish_item_dialogue()
             return
 
-        callback = self.item_dialogue_on_complete
-
-        self.dialogue_box.hide()
-        self.item_dialogue_messages = []
-        self.item_dialogue_index = 0
-        self.item_dialogue_on_complete = None
-        self.state = "playing"
-
-        if callable(callback):
-            callback()
+        self.dialogue_writer.advance_or_skip()
+        self._sync_dialogue_compat_state()
 
     def activate_light_world_item_action(
         self,
@@ -1756,15 +1773,14 @@ class Game:
                 except tk.TclError:
                     pass
 
-    def start_dialogue(self, dialogue=None, lock_player=True):
-        self.dialogue_active = True
-        self.dialogue_blocks_movement = lock_player
-        self.dialogue_index = 0
-        self.character_index = 0
-        self.typing = True
-        self.dialogue_box.show()
-        self.type_text()
     def load_dialogue(self):
+        """
+        Load localization data and create the unified dialogue stack.
+
+        DialogueWriter corresponds to obj_writer.
+        DialogueBox owns the obj_writer_stay-style box/rendering layer.
+        """
+
         self.dialogue_index = 0
         self.dialogue_data = {}
 
@@ -1785,15 +1801,11 @@ class Game:
                 self.dialogue_data = {}
 
         self.dialogue_box = DialogueBox(self)
-    def interact(self, event = None):
-        if self.dialogue_active:
-            self.dialogue_box.advance()
-            return
-        interaction_rect = self.player.get_interaction_box()
-        for obj in self.room.interactable_objects:
-            if interaction_rect.colliderect(obj.hitbox):
-                obj.interact(self)
-                return
+        self.dialogue_writer = DialogueWriter(
+            self,
+            self.dialogue_box,
+        )
+
     def setup_window(self):
         self.root.title("DELTARUNE Chapter 6")
         self.root.geometry("320x240")
@@ -2377,41 +2389,118 @@ class Game:
     def render_background_dynamic(self):
         x, y = self.game_to_screen(0,0)
         self.canvas.coords(self.background_sprite, x, y)
-    #have the dialogue box type out the text character by character, with a sound effect for each character
-    def type_text(self):
-        #call the room's dialogue list and get the current dialogue object
-        current = self.room.dialogue[self.dialogue_index]
-        voice = current.voice
-        dialogue_data = getattr(
-            self,
-            "dialogue_data",
-            {},
+    # ======================================================
+    # UNIFIED DIALOGUE
+    # ======================================================
+
+    def _sync_dialogue_compat_state(self):
+        """
+        Keep the old Game fields readable while DialogueWriter is the
+        authoritative state machine.
+        """
+
+        writer = self.dialogue_writer
+
+        self.typing = bool(
+            writer.active
+            and writer.typing
         )
 
-        text = dialogue_data.get(
-            current.text_id,
-            current.text_id,
+        self.typing_job = None
+
+        self.dialogue_index = (
+            writer.message_index
+            if writer.active
+            else 0
         )
-        current_choices = current.choices
-        scene_id = current.scene_id
-        sound_effect = current.sound_effect
-        
-        if self.character_index == 0 and sound_effect:
-            sound_effect.play()
-        #while there is still text left to type, add one character to the dialogue box and play the sound effect
-        if self.character_index < len(text):
-            self.dialogue_box.set_text(text[:self.character_index+1])
-            if voice:
-                voice.play()
-            
-            #advance index and recurse
-            self.character_index +=1
-            self.typing_job = self.root.after(50, self.type_text)
-        else:
-            self.typing = False
-            self.typing_job = None
-            if current_choices: #if the current dialogue has a choice, display them
-                self.show_choices(current_choices)
+
+        self.character_index = sum(
+            1
+            for glyph in writer.visible_glyphs
+            if glyph.char not in (None, "\n")
+        )
+
+    def _finish_room_dialogue(self):
+        self.dialogue_active = False
+        self.dialogue_blocks_movement = False
+        self.current_dialogue = None
+        self.choice_active = False
+        self._sync_dialogue_compat_state()
+
+    def _dialogue_choice_handler(self):
+        """
+        Return a choice callback only after the project has a concrete
+        show_choices() implementation.  Until then, DialogueWriter does not
+        freeze a page merely because old Dialogue data contains choices.
+        """
+
+        handler = getattr(
+            self,
+            "show_choices",
+            None,
+        )
+
+        if not callable(handler):
+            return None
+
+        def present(choices):
+            self.choice_active = True
+            handler(choices)
+
+        return present
+
+    def start_dialogue(
+        self,
+        dialogue=None,
+        lock_player=True,
+    ):
+        """
+        Start room, trigger, or cutscene dialogue through DialogueWriter.
+
+        ``dialogue`` may be:
+            None                -> use room.dialogue
+            Dialogue            -> one entry
+            list[Dialogue]      -> multiple entries
+            str / list[str]     -> direct writer text
+        """
+
+        if dialogue is None:
+            dialogue = getattr(
+                self.room,
+                "dialogue",
+                [],
+            )
+
+        if not dialogue:
+            return
+
+        # Replace any prior writer cleanly instead of allowing two sets of
+        # dialogue state to coexist.
+        if self.dialogue_writer.active:
+            self.dialogue_writer.stop(
+                hide_box=False
+            )
+
+        self.dialogue_active = True
+        self.dialogue_blocks_movement = bool(
+            lock_player
+        )
+        self.current_dialogue = dialogue
+        self.choice_active = False
+
+        self.dialogue_box.clear_portrait()
+
+        self.dialogue_writer.start(
+            dialogue,
+            text_lookup=self.dialogue_data,
+            on_complete=self._finish_room_dialogue,
+            on_choices=self._dialogue_choice_handler(),
+            auto_close=True,
+            show_box=True,
+        )
+
+        self._sync_dialogue_compat_state()
+
     def advance_dialogue(self, event=None):
         if self.state == "item_dialogue":
             self.advance_item_dialogue()
@@ -2423,87 +2512,74 @@ class Game:
         if self.choice_active:
             return
 
-        # Normal Z/Space presses in the overworld must not
-        # advance room dialogue unless a room dialogue is
-        # actually active/visible.
-        if not (
-            self.dialogue_box.visible
-            or self.typing
-            or self.dialogue_active
+        if not self.dialogue_writer.active:
+            return
+
+        self.dialogue_writer.advance_or_skip()
+        self._sync_dialogue_compat_state()
+
+    def skip_dialogue(self, event=None):
+        """
+        X/button2-style writer skip.  This is separate from confirm so
+        DELTARUNE's skippable flag can be respected.
+        """
+
+        if self.state not in (
+            "playing",
+            "item_dialogue",
         ):
             return
 
-        room_dialogue = getattr(
-            self.room,
-            "dialogue",
-            [],
+        if not self.dialogue_writer.active:
+            return
+
+        self.dialogue_writer.skip()
+        self._sync_dialogue_compat_state()
+
+    def interact(self, event=None):
+        if self.state != "playing":
+            return
+
+        if self.dialogue_writer.active:
+            self.advance_dialogue(event)
+            return
+
+        if self.choice_active:
+            return
+
+        interaction_box = (
+            self.player.get_interaction_box()
         )
 
-        if not room_dialogue:
-            return
-
-        if not (
-            0 <= self.dialogue_index
-            < len(room_dialogue)
-        ):
-            self.dialogue_index = 0
-            return
-
-        current = room_dialogue[
-            self.dialogue_index
-        ]
-        text = current.text_id
-        
-        #if the player presses the advance key while text is still being typed, finish typing it instantly
-        if self.typing:
-            self.dialogue_box.set_text(text)
-            self.character_index = len(text)
-            self.typing = False
-            if self.typing_job is not None:
-                self.root.after_cancel(self.typing_job)
-                self.typing_job = None
-            if current.choices: #If the current dialogue has a choice, display them
-                self.show_choices(current.choices)
-            return
-        
-        #if its finished, then advance to the next dialogue
-        self.dialogue_index += 1
-        if self.dialogue_index < len(self.room.dialogue):
-            self.dialogue_box.set_text("")
-            self.character_index = 0
-            self.typing = True
-            self.type_text()
-        else: # no more dialogue is left, so close the dialogue box
-            self.dialogue_box.hide()
-            self.typing = False
-            self.dialogue_active = False
-            self.dialogue_blocks_movement = False
-            self.character_index = 0
-            self.dialogue_index = 0
-    def start_dialogue(self):
-        self.dialogue_box.show()
-        self.dialogue_index = 0
-        self.character_index = 0
-        self.typing = True
-        self.type_text()
-    def interact(self, event = None):
-        # print("Interaction key pressed") #debug for interaction key
-        #assuming they are not in a dialogue, choice, or menu, check if they are touching an interactable object
-        if self.state != "playing" or self.typing or self.choice_active:
-            return
-        interaction_box = self.player.get_interaction_box()
-        
-        #check if any of the interactable objects in the room overlap with the interaction box
         for obj in self.room.interactable_objects:
-            obj_box = (obj.x, obj.y, obj.x + obj.width, obj.y + obj.height)
-            if self.rectangles_overlap(interaction_box, obj_box):
-                if obj.action == "dialogue": #objects like the bed
-                    self.start_dialogue()
-                elif obj.action == "scene": #doors
-                    self.load_scene(obj.data)
-                elif obj.action == "sound": #noisemakers
-                    self.audio.play_sound(obj.data)
-                break
+            obj_box = (
+                obj.x,
+                obj.y,
+                obj.x + obj.width,
+                obj.y + obj.height,
+            )
+
+            if not self.rectangles_overlap(
+                interaction_box,
+                obj_box,
+            ):
+                continue
+
+            if obj.action == "dialogue":
+                self.start_dialogue()
+
+            elif obj.action == "scene":
+                self.load_scene(
+                    obj.data
+                )
+
+            elif obj.action == "sound":
+                self.audio.play_sound(
+                    obj.data
+                )
+
+            break
+
     def handle_z(self, event=None):
         if self.transitioning:
             return
@@ -2519,11 +2595,8 @@ class Game:
         if self.state != "playing":
             return
 
-        # One Z press should either advance an already-open
-        # dialogue OR inspect/interact with the overworld.
         if (
-            self.dialogue_box.visible
-            or self.typing
+            self.dialogue_writer.active
             or self.dialogue_active
             or self.choice_active
         ):
@@ -2584,6 +2657,15 @@ class Game:
         if self.state == "opening_scene":
             # Direction state is already recorded in keys_pressed above. The
             # opening controller reads held keys once per logical frame.
+            return
+
+        # Dialogue button2 / X skips the remainder of a skippable page.
+        if (
+            key == "x"
+            and self.state in ("playing", "item_dialogue")
+            and self.dialogue_writer.active
+        ):
+            self.skip_dialogue()
             return
 
         # C = menu open / close
@@ -2681,18 +2763,20 @@ class Game:
                 self.transitioning = False
         self.render_dynamic()
     def advance(self):
-        if self.character_index < len(self.current_text):
-            # Finish typing
-            self.character_index = len(self.current_text)
+        """
+        Backward-compatible alias for older code that still calls
+        Game.advance() instead of advance_dialogue().
+        """
+
+        if not self.dialogue_writer.active:
             return
-        if self.dialogue_index < len(self.dialogue) - 1:
-             # Next line
-             self.dialogue_index += 1
-             self.start_line(self.dialogue[self.dialogue_index])
-             return
-        # Dialogue finished
-        self.close_dialogue()
+
+        self.dialogue_writer.advance_or_skip()
+        self._sync_dialogue_compat_state()
     def check_dialogue_triggers(self):
+        if self.dialogue_writer.active:
+            return
+
         player_box = self.player.get_hitbox()
         for trigger in self.room.triggers:
             if trigger.once and trigger.id in self.triggered_events:
@@ -2887,6 +2971,10 @@ class Game:
             return
 
         if self.state == "playing":
+            if self.dialogue_writer.active:
+                self.dialogue_writer.update(1.0)
+                self._sync_dialogue_compat_state()
+
             movement_keys_held = bool(
                 self.keys_pressed & {"Left", "Right", "Up", "Down"}
             )
@@ -2967,6 +3055,10 @@ class Game:
             self.check_dialogue_triggers()
 
         elif self.state == "item_dialogue":
+            if self.dialogue_writer.active:
+                self.dialogue_writer.update(1.0)
+                self._sync_dialogue_compat_state()
+
             # Item dialogue owns input.  Keep the room/player visible,
             # but freeze movement, room transitions, and menu navigation.
             self.update_camera()
