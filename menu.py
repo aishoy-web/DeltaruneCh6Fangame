@@ -92,6 +92,9 @@ class Menu:
         self.item_text = []
         self.action_text = []
 
+        self.cell_text = []
+        self.cell_font_images = {}
+
         self.stat_text = {}
         self.stat_font_images = {}
 
@@ -112,6 +115,7 @@ class Menu:
         self.selected = 0
         self.item_selected = 0
         self.item_action_selected = 0
+        self.cell_selected = 0
 
         self.options = [
             "ITEM",
@@ -122,6 +126,10 @@ class Menu:
         # Maximum number of inventory entries currently
         # displayed in the Item window.
         self.max_visible_items = 8
+
+        # Recovered menuno == 3 Draw event renders seven
+        # global.phonename[] entries.
+        self.max_visible_cell_entries = 7
 
         # ==================================================
         # Main menu position
@@ -144,6 +152,14 @@ class Menu:
         # ==================================================
         self.stat_menu_x = 94
         self.stat_menu_y = 26
+
+        # ==================================================
+        # CELL menu position
+        # ==================================================
+        self.cell_menu_x = 94
+        self.cell_menu_y = 26
+        self.cell_menu_width = 173
+        self.cell_menu_height = 135
 
         self.stat_positions = {
         "name": (108, 42),
@@ -219,6 +235,22 @@ class Menu:
 
     def has_items(self):
         return len(self.get_inventory()) > 0
+
+    # ======================================================
+    # CELL / PHONE
+    # ======================================================
+
+    def get_phone_entries(self):
+        getter = getattr(
+            self.game,
+            "get_light_world_phone_entries",
+            None,
+        )
+
+        if callable(getter):
+            return list(getter())
+
+        return []
 
     # ======================================================
     # OVERWORLD STATS
@@ -442,6 +474,42 @@ class Menu:
         )
 
         # --------------------------------------------------
+        # CELL menu box
+        # --------------------------------------------------
+
+        self.menu_sprite_cell = (
+            self.game.canvas.create_rectangle(
+                0, 0, 0, 0,
+                fill="white",
+                outline="",
+                state="hidden",
+                tags=("menu", "menu_cell"),
+            )
+        )
+
+        self.menu_cell_inner = (
+            self.game.canvas.create_rectangle(
+                0, 0, 0, 0,
+                fill="black",
+                outline="",
+                state="hidden",
+                tags=("menu", "menu_cell"),
+            )
+        )
+
+        for _ in range(
+            self.max_visible_cell_entries
+        ):
+            text = self.game.canvas.create_image(
+                0,
+                0,
+                anchor="nw",
+                state="hidden",
+                tags=("menu", "menu_cell"),
+            )
+            self.cell_text.append(text)
+
+        # --------------------------------------------------
         # Stat menu text
         # --------------------------------------------------
 
@@ -532,10 +600,13 @@ class Menu:
                 self.menu_sprite,
                 self.menu_sprite_item,
                 self.menu_sprite_stat,
+                self.menu_sprite_cell,
+                self.menu_cell_inner,
                 self.cursor,
                 *self.option_text,
                 *self.item_text,
                 *self.action_text,
+                *self.cell_text,
                 *self.stat_text.values(),
             ]
         )
@@ -606,6 +677,51 @@ class Menu:
             x,
             y
         )
+
+        # --------------------------------------------------
+        # CELL menu box / entries
+        # --------------------------------------------------
+
+        x1, y1 = self.game.ui_to_screen(
+            self.cell_menu_x,
+            self.cell_menu_y,
+        )
+        x2, y2 = self.game.ui_to_screen(
+            self.cell_menu_x + self.cell_menu_width,
+            self.cell_menu_y + self.cell_menu_height,
+        )
+
+        self.game.canvas.coords(
+            self.menu_sprite_cell,
+            x1, y1, x2, y2,
+        )
+
+        ix1, iy1 = self.game.ui_to_screen(
+            self.cell_menu_x + 3,
+            self.cell_menu_y + 3,
+        )
+        ix2, iy2 = self.game.ui_to_screen(
+            self.cell_menu_x + self.cell_menu_width - 3,
+            self.cell_menu_y + self.cell_menu_height - 3,
+        )
+
+        self.game.canvas.coords(
+            self.menu_cell_inner,
+            ix1, iy1, ix2, iy2,
+        )
+
+        for i, text in enumerate(
+            self.cell_text
+        ):
+            x, y = self.game.ui_to_screen(
+                116,
+                40 + i * 16,
+            )
+            self.game.canvas.coords(
+                text,
+                x,
+                y,
+            )
 
         # --------------------------------------------------
         # Stat menu text
@@ -745,7 +861,7 @@ class Menu:
             self.cursor,
             state=(
                 "normal"
-                if self.screen in ("main", "item", "item_action")
+                if self.screen in ("main", "item", "item_action", "cell")
                 else "hidden"
             )
         )
@@ -772,6 +888,24 @@ class Menu:
                 )
             )
 
+        cell_visible = (
+            self.screen == "cell"
+        )
+
+        for item in (
+            self.menu_sprite_cell,
+            self.menu_cell_inner,
+            *self.cell_text,
+        ):
+            self.game.canvas.itemconfigure(
+                item,
+                state=(
+                    "normal"
+                    if cell_visible
+                    else "hidden"
+                )
+            )
+
     # ======================================================
     # OPEN / CLOSE
     # ======================================================
@@ -782,6 +916,7 @@ class Menu:
         self.screen = "main"
         self.selected = 0
         self.item_selected = 0
+        self.cell_selected = 0
 
         self.normalize_selection()
 
@@ -815,6 +950,10 @@ class Menu:
             self.move_item_up()
             return
 
+        if self.screen == "cell":
+            self.move_cell_up()
+            return
+
         if self.screen in ("item_action", "stat"):
             return
 
@@ -846,6 +985,10 @@ class Menu:
 
         if self.screen == "item":
             self.move_item_down()
+            return
+
+        if self.screen == "cell":
+            self.move_cell_down()
             return
 
         if self.screen in ("item_action", "stat"):
@@ -904,6 +1047,29 @@ class Menu:
         ):
 
             self.item_selected += 1
+            self.menu_move.play()
+            self.render_dynamic()
+
+    def move_cell_up(self):
+        entries = self.get_phone_entries()
+
+        if entries and self.cell_selected > 0:
+            self.cell_selected -= 1
+            self.menu_move.play()
+            self.render_dynamic()
+
+    def move_cell_down(self):
+        entries = self.get_phone_entries()
+
+        if (
+            entries
+            and self.cell_selected
+            < min(
+                len(entries),
+                self.max_visible_cell_entries,
+            ) - 1
+        ):
+            self.cell_selected += 1
             self.menu_move.play()
             self.render_dynamic()
 
@@ -985,8 +1151,42 @@ class Menu:
                 self.update_visibility()
                 self.game.canvas.tag_raise("menu")
                 return
-        
-            # CELL will be implemented later.
+
+            elif option == "CELL":
+                self.menu_select.play()
+                self.screen = "cell"
+                self.cell_selected = 0
+                self.render_static()
+                self.render_dynamic()
+                self.update_visibility()
+                self.game.canvas.tag_raise("menu")
+                return
+
+            return
+
+        # --------------------------------------------------
+        # CELL menu
+        # --------------------------------------------------
+
+        if self.screen == "cell":
+            entries = self.get_phone_entries()
+
+            if not entries:
+                return
+
+            self.menu_select.play()
+
+            activate = getattr(
+                self.game,
+                "activate_light_world_phone",
+                None,
+            )
+
+            if callable(activate):
+                activate(
+                    self.cell_selected
+                )
+
             return
 
         # --------------------------------------------------
@@ -1057,6 +1257,46 @@ class Menu:
             self.game.canvas.tag_raise(
                 "menu"
             )
+
+    def render_cell_screen(self):
+        if not self.cell_text:
+            return
+
+        entries = self.get_phone_entries()
+        main_font = self.game.ui_sprites.main_font
+
+        if entries:
+            self.cell_selected = min(
+                self.cell_selected,
+                len(entries) - 1,
+            )
+        else:
+            self.cell_selected = 0
+
+        for i, text in enumerate(
+            self.cell_text
+        ):
+            if i < len(entries):
+                _, name = entries[i]
+
+                image = main_font.render(
+                    str(name)
+                )
+                self.cell_font_images[i] = image
+
+                self.game.canvas.itemconfigure(
+                    text,
+                    image=image,
+                )
+            else:
+                self.cell_font_images.pop(
+                    i,
+                    None,
+                )
+                self.game.canvas.itemconfigure(
+                    text,
+                    image="",
+                )
 
     def render_stat_screen(self):
 
@@ -1281,6 +1521,7 @@ class Menu:
         )
 
         self.render_stat_screen()
+        self.render_cell_screen()
 
         # --------------------------------------------------
         # Refresh cursor
@@ -1397,6 +1638,32 @@ class Menu:
                 ]
             )
 
+        elif self.screen == "cell":
+            entries = self.get_phone_entries()
+
+            if not entries:
+                self.game.canvas.itemconfigure(
+                    self.cursor,
+                    state="hidden",
+                )
+                self.render_cell_screen()
+                self.game.canvas.tag_raise(
+                    "menu"
+                )
+                return
+
+            self.cell_selected = min(
+                self.cell_selected,
+                len(entries) - 1,
+            )
+
+            cursor_x = 104
+            cursor_y = (
+                44
+                + self.cell_selected * 16
+            )
+            self.render_cell_screen()
+
         elif self.screen == "stat":
 
             # STAT has no cursor, but its values may have
@@ -1411,6 +1678,11 @@ class Menu:
 
         else:
             return
+
+        self.game.canvas.itemconfigure(
+            self.cursor,
+            state="normal",
+        )
 
         x, y = self.game.ui_to_screen(
             cursor_x,

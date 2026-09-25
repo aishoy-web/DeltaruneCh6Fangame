@@ -13,7 +13,8 @@ from hud import HUD
 from player import Player
 from fileselect import FileMenu
 from dialogue_box import DialogueBox
-from dialogue import DialogueWriter
+from dialogue_writer import DialogueWriter
+from dialogue_content import DIALOGUE_TEXT
 import json
 from audiomanager import AudioManager
 from menu import Menu
@@ -95,12 +96,18 @@ class Game:
         self.lmaxhp = 20
 
         self.lat = 10
-        self.lwstrength = 0
+
+        # Fresh/non-imported Chapter 6 equipment.
+        # Pencil2 is Light World weapon ID 22.
+        self.lweapon = 22
+        self.lwstrength = get_lw_weapon_strength(
+            self.lweapon
+        )
 
         self.ldf = 10
         self.ladef = 0
 
-        self.lweapon = 0
+        # Bandage is Light World armor ID 3.
         self.larmor = 3
 
         self.lgold = 2
@@ -163,7 +170,7 @@ class Game:
         self.quit_final_hold = 0.15
         
         #other init
-        self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
         self.widescreen_mode = False
         self.transitioning = False
         self.fade_alpha = 0
@@ -269,6 +276,17 @@ class Game:
             11,  # Glass
             17,  # BlackShard
         ]
+
+        # ==================================================
+        # LIGHT WORLD CELL / PHONE
+        # ==================================================
+        # Recovered overworld GML stores numeric phone actions
+        # in global.phone[] and their menu names separately.
+        # ID 201 is the recovered call-home routine.
+        self.LW_phone = [201]
+        self.LW_phone_names = {
+            201: "Call Home",
+        }
 
         # Numeric Light World flags used by item-specific behavior.
         self.light_world_flags = {}
@@ -721,14 +739,14 @@ class Game:
         self.lweapon = int(
             save_data.get(
                 "lweapon",
-                0,
+                22,
             )
         )
 
         self.larmor = int(
             save_data.get(
                 "larmor",
-                0,
+                3,
             )
         )
 
@@ -784,7 +802,9 @@ class Game:
         self.lwstrength = int(
             save_data.get(
                 "lwstrength",
-                0,
+                get_lw_weapon_strength(
+                    self.lweapon
+                ),
             )
         )
 
@@ -807,6 +827,18 @@ class Game:
                 )
                 if item_id not in (None, 0)
             ][:8]
+
+        imported_phone = save_data.get(
+            "LW_phone"
+        )
+
+        if imported_phone is not None:
+            self.LW_phone = [
+                int(phone_id)
+                for phone_id in imported_phone
+                if int(phone_id) != 0
+            ][:8]
+
         print(
             "[Opening Scene] lweapon =",
             self.lweapon,
@@ -871,6 +903,12 @@ class Game:
                 )
             )
 
+            light_phone = (
+                self.read_deltarune_pc_light_phone(
+                    source_path
+                )
+            )
+
             self.kris_preservation_society = (
                 self.read_deltarune_pc_flag(
                     source_path,
@@ -906,6 +944,7 @@ class Game:
                 # Light World state imported from Chapter 5.
                 **light_stats,
                 "LW_inventory": light_inventory,
+                "LW_phone": light_phone,
 
                 "opening_complete": False,
             }
@@ -1040,6 +1079,56 @@ class Game:
                     inventory.append(item_id)
 
             return inventory
+
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+        ):
+            return []
+
+    def read_deltarune_pc_light_phone(
+        self,
+        save_path,
+    ):
+        """
+        Read global.phone[] from a Windows/PC DELTARUNE save.
+
+        The save layout interleaves:
+            litem[0], phone[0], litem[1], phone[1], ...
+
+        so phone slots are zero-based lines 537, 539, ... 551.
+        """
+
+        if save_path is None:
+            return []
+
+        try:
+            lines = Path(save_path).read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).splitlines()
+
+            phone = []
+
+            for slot in range(8):
+                line_index = 537 + slot * 2
+
+                if not (
+                    0 <= line_index < len(lines)
+                ):
+                    break
+
+                phone_id = int(
+                    float(
+                        lines[line_index].strip()
+                    )
+                )
+
+                if phone_id != 0:
+                    phone.append(phone_id)
+
+            return phone
 
         except (
             OSError,
@@ -1221,6 +1310,118 @@ class Game:
 
         self.dialogue_writer.advance_or_skip()
         self._sync_dialogue_compat_state()
+
+    # ======================================================
+    # LIGHT WORLD CELL
+    # ======================================================
+
+    def get_light_world_phone_entries(self):
+        """
+        Return (phone_id, display_name) pairs for the CELL menu.
+        """
+
+        entries = []
+
+        for phone_id in getattr(
+            self,
+            "LW_phone",
+            [],
+        ):
+            try:
+                phone_id = int(phone_id)
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+
+            if phone_id == 0:
+                continue
+
+            entries.append(
+                (
+                    phone_id,
+                    self.LW_phone_names.get(
+                        phone_id,
+                        f"Phone {phone_id}",
+                    ),
+                )
+            )
+
+        # Recovered menuno == 3 Draw event renders seven names.
+        return entries[:7]
+
+    def use_light_world_phone(
+        self,
+        phone_id,
+    ):
+        """
+        Execute one recovered global.phone[] action.
+        """
+
+        phone_id = int(phone_id)
+
+        if phone_id == 201:
+            self._play_optional_item_sfx(
+                "snd_phone.wav"
+            )
+
+            # Recovered default branch of scr_litemuseb case 201.
+            return [
+                "* Ring.../",
+                "* No one picked up./%",
+            ]
+
+        if phone_id == 202:
+            # Original case 202 calls scr_text(375), whose text
+            # has not been recovered yet. Leave a hook instead
+            # of inventing replacement dialogue.
+            return list(
+                getattr(
+                    self,
+                    "phone_202_messages",
+                    [],
+                )
+            )
+
+        return []
+
+    def activate_light_world_phone(
+        self,
+        phone_index,
+    ):
+        entries = (
+            self.get_light_world_phone_entries()
+        )
+
+        try:
+            phone_index = int(
+                phone_index
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return
+
+        if not (
+            0 <= phone_index < len(entries)
+        ):
+            return
+
+        phone_id, _ = entries[
+            phone_index
+        ]
+
+        messages = (
+            self.use_light_world_phone(
+                phone_id
+            )
+        )
+
+        self.start_item_dialogue(
+            messages
+        )
 
     def activate_light_world_item_action(
         self,
@@ -1774,32 +1975,15 @@ class Game:
                     pass
 
     def load_dialogue(self):
-        """
-        Load localization data and create the unified dialogue stack.
+        """Create the unified dialogue stack.
 
-        DialogueWriter corresponds to obj_writer.
-        DialogueBox owns the obj_writer_stay-style box/rendering layer.
+        Dialogue text now lives in Python (dialogue_content.py), so runtime
+        dialogue no longer depends on eng.json.  DialogueWriter corresponds to
+        obj_writer while DialogueBox owns the obj_dialoguer/obj_writer_stay UI.
         """
 
         self.dialogue_index = 0
-        self.dialogue_data = {}
-
-        dialogue_path = BASE_DIR / "eng.json"
-
-        if dialogue_path.exists():
-            try:
-                with open(
-                    dialogue_path,
-                    "r",
-                    encoding="utf-8",
-                ) as file:
-                    self.dialogue_data = json.load(file)
-            except (
-                OSError,
-                json.JSONDecodeError,
-            ):
-                self.dialogue_data = {}
-
+        self.dialogue_data = DIALOGUE_TEXT
         self.dialogue_box = DialogueBox(self)
         self.dialogue_writer = DialogueWriter(
             self,
@@ -2425,6 +2609,8 @@ class Game:
         self.dialogue_blocks_movement = False
         self.current_dialogue = None
         self.choice_active = False
+        if self.dialogue_box.doom is None:
+            self.dialogue_box.set_side(None)
         self._sync_dialogue_compat_state()
 
     def _dialogue_choice_handler(self):
@@ -2452,6 +2638,7 @@ class Game:
     def start_dialogue(
         self,
         dialogue=None,
+        options=None,
         lock_player=True,
     ):
         """
@@ -2463,6 +2650,15 @@ class Game:
             list[Dialogue]      -> multiple entries
             str / list[str]     -> direct writer text
         """
+
+        # CutsceneMaster calls start_dialogue(messages, options).  Older project
+        # code may still pass a bool as the second positional argument, so keep
+        # that form compatible.
+        if isinstance(options, bool):
+            lock_player = options
+            options = None
+
+        dialogue_options = dict(options or {})
 
         if dialogue is None:
             dialogue = getattr(
@@ -2489,14 +2685,52 @@ class Game:
         self.choice_active = False
 
         self.dialogue_box.clear_portrait()
+        self.dialogue_box.set_side(
+            dialogue_options.get("side", "any")
+        )
+
+        stay = dialogue_options.get("stay", 0)
+        try:
+            stay_frames = int(stay)
+        except (TypeError, ValueError):
+            stay_frames = 0
+
+        speaker = dialogue_options.get("speaker", "normal")
+        speaker_typers = {
+            "normal": 1,
+            "toriel": 7,
+            "susie": 10,
+            "noelle": 12,
+            "berdly": 13,
+            "sans": 14,
+            "undyne": 17,
+            "asgore": 18,
+            "alphys": 20,
+            "ralsei": 31,
+            "lancer": 32,
+            "queen": 58,
+        }
+        try:
+            default_typer = int(speaker)
+        except (TypeError, ValueError):
+            default_typer = speaker_typers.get(
+                str(speaker).lower(),
+                1,
+            )
 
         self.dialogue_writer.start(
             dialogue,
             text_lookup=self.dialogue_data,
+            typer=default_typer,
             on_complete=self._finish_room_dialogue,
             on_choices=self._dialogue_choice_handler(),
             auto_close=True,
             show_box=True,
+            runcheck=bool(dialogue_options.get("runcheck", False)),
+            prevent_char_skip=bool(
+                dialogue_options.get("prevent_skip", False)
+            ),
+            stay_frames=stay_frames,
         )
 
         self._sync_dialogue_compat_state()
@@ -2868,6 +3102,16 @@ class Game:
             "slot": slot,
             "chapter": 6,
             "room": "myroom",
+
+            # Fresh/non-imported Light World equipment.
+            "lweapon": 22,  # Pencil2
+            "lwstrength": get_lw_weapon_strength(22),
+            "larmor": 3,   # Bandage
+            "ladef": 0,
+
+            # Basic CELL entry for a new Chapter 6 file.
+            "LW_phone": [201],
+
             "opening_complete": False,
         }
         if start_game:
@@ -2975,6 +3219,8 @@ class Game:
                 self.dialogue_writer.update(1.0)
                 self._sync_dialogue_compat_state()
 
+            self.dialogue_box.update()
+
             movement_keys_held = bool(
                 self.keys_pressed & {"Left", "Right", "Up", "Down"}
             )
@@ -3058,6 +3304,8 @@ class Game:
             if self.dialogue_writer.active:
                 self.dialogue_writer.update(1.0)
                 self._sync_dialogue_compat_state()
+
+            self.dialogue_box.update()
 
             # Item dialogue owns input.  Keep the room/player visible,
             # but freeze movement, room transitions, and menu navigation.

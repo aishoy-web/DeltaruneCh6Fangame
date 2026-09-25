@@ -16,7 +16,7 @@ class AudioManager:
         # print("Loading music:", music_path)
         # with open(music_path, "rb") as file:
             # print("Audio header:", file.read(12))
-        pygame.mixer.music.load(music_path)
+        pygame.mixer.music.load(str(music_path))
         pygame.mixer.music.set_volume(self.music_volume)
         loops = -1 if loop else 0
         pygame.mixer.music.play(loops)
@@ -34,9 +34,8 @@ class AudioManager:
         500,
         lambda: self.play_music(filename))
     def play_sfx(self, filename):
-        sound = pygame.mixer.Sound(
-            BASE_DIR / "audio" / "sfx" / filename
-        )
+        sound_path = BASE_DIR / "sfx" / filename
+        sound = pygame.mixer.Sound(str(sound_path))
         sound.play()
     def pitch_shift_sound(self, sound, pitch=1.0):
         """

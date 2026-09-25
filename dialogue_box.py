@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image, ImageTk
 
 from dialogue import VisibleGlyph
+from dialogue_portrait import DialoguePortrait, PortraitDefinition
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -61,6 +62,7 @@ class DialogueBox:
         #   0 = top
         #   1 = bottom
         self.side = 0
+        self.side_override = None
 
         self.x_offset = 0
         self.y_offset = 0
@@ -95,10 +97,13 @@ class DialogueBox:
         # --------------------------------------------------
         # Portrait state
         # --------------------------------------------------
+        self.portrait_controller = DialoguePortrait(self.game, self)
         self.portrait = None
         self.portrait_photo = None
         self.portrait_width = 58
         self.portrait_gap = 0
+        self.portrait_offset_x = 0
+        self.portrait_offset_y = 0
         self.face_code = None
         self.expression_code = None
 
@@ -359,7 +364,10 @@ class DialogueBox:
         x = self.box_x + self.text_padding_x
         y = self.box_y + self.text_padding_y
 
-        if self.portrait is not None:
+        # Text reserves the face column whenever fc != 0, even if the actual
+        # portrait asset has not been registered yet.  obj_writer changes
+        # writingx/charline from the face state, not from sprite availability.
+        if self.portrait_controller.character is not None:
             x += self.portrait_width + self.portrait_gap
 
         return x, y
@@ -579,8 +587,12 @@ class DialogueBox:
         )
         self.portrait_photo = ImageTk.PhotoImage(scaled)
 
-        logical_x = self.box_x + 8
-        logical_y = self.box_y + 8
+        # scr_facechoice creates obj_face at writer.x + 8, writer.y + 5.
+        # With the Light World writer origin (29, 15 + side*155), that is
+        # logical (37, 20 + side*155), i.e. box + (21, 15).  Individual
+        # portrait families then apply their own obj_face offsets.
+        logical_x = self.box_x + 21 + self.portrait_offset_x
+        logical_y = self.box_y + 15 + self.portrait_offset_y
         sx, sy = self.game.ui_to_screen(logical_x, logical_y)
 
         self.game.canvas.coords(self.portrait_sprite, sx, sy)
@@ -590,11 +602,24 @@ class DialogueBox:
             state="normal" if self.visible else "hidden",
         )
 
+    def _apply_portrait_state(self, portrait):
+        self.face_code = portrait.face_code
+        self.expression_code = portrait.expression
+        self.portrait = portrait.image
+        self.portrait_width = portrait.width
+        self.portrait_offset_x = portrait.offset_x
+        self.portrait_offset_y = portrait.offset_y
+        self._layout_portrait()
+        self._render_glyphs()
+
     def clear_portrait(self):
+        self.portrait_controller.clear()
         self.portrait = None
         self.portrait_photo = None
         self.face_code = None
         self.expression_code = None
+        self.portrait_offset_x = 0
+        self.portrait_offset_y = 0
 
         if self.portrait_sprite is not None:
             self.game.canvas.itemconfigure(
@@ -605,13 +630,22 @@ class DialogueBox:
 
         self._render_glyphs()
 
+    def register_portrait(self, name, definition: PortraitDefinition):
+        self.portrait_controller.register(name, definition)
+
+    def register_static_portrait(self, name, path, **kwargs):
+        self.portrait_controller.register_static(name, path, **kwargs)
+
+    def trigger_mouth(self):
+        self.portrait_controller.trigger_mouth()
+
     def set_face_code(self, code):
-        # The GML writer stores global.fc here.  Actual sprite lookup belongs
-        # in the portrait registry once those assets are wired in.
         self.face_code = code
+        self.portrait_controller.set_face_code(code)
 
     def set_expression_code(self, code):
         self.expression_code = code
+        self.portrait_controller.set_expression_code(code)
 
     # ======================================================
     # Visibility / lifecycle
@@ -665,12 +699,36 @@ class DialogueBox:
         if self.soul_sprite is not None:
             self.game.canvas.itemconfigure(self.soul_sprite, state="hidden")
 
+
+    def set_side(self, side=None):
+        """Set DELTARUNE dialoguer side: 0=top, 1=bottom, None=automatic."""
+        if side in (None, "any", "auto", -1):
+            self.side_override = None
+        elif side in (0, "top"):
+            self.side_override = 0
+            self.side = 0
+        elif side in (1, "bottom"):
+            self.side_override = 1
+            self.side = 1
+        else:
+            raise ValueError(f"Unknown dialogue side: {side!r}")
+
+        if self.visible:
+            self.update_position()
+            self.layout_widgets()
+
     def update_position(self):
         """Match the existing project rule using writer_stay's side system.
 
         Kris in the lower 40% of the viewport -> top box (side 0).
         Otherwise -> bottom box (side 1).
         """
+
+        if self.side_override is not None:
+            self.side = int(self.side_override)
+            if self.visible:
+                self.layout_widgets()
+            return
 
         player = getattr(self.game, "player", None)
         if player is None:
@@ -700,6 +758,9 @@ class DialogueBox:
         self.doom = max(1, int(frames))
 
     def update(self):
+        # obj_face Step runs independently of writer timing.
+        self.portrait_controller.update()
+
         if self.doom is None:
             return
 
@@ -730,4 +791,4 @@ class DialogueBox:
         self.layout_widgets()
 
 
-__all__ = ["DialogueBox"]
+__all__ = ["DialogueBox", "PortraitDefinition"]

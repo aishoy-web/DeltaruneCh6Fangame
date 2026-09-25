@@ -6,7 +6,6 @@ breakout/catching animation replaceable:
 
 * ``spr_redwagon.png`` is the intact cage placeholder.
 * ``spr_kris_room_wagon.png`` is the opened/broken cage placeholder.
-* ``CATCH_SOUND`` is ``None`` until the final sound is supplied.
 * ``DAY_ROOM_BACKGROUND`` supplies the daytime Kris-room art used after the
   catch sequence.
 
@@ -45,7 +44,7 @@ DAY_ROOM_BACKGROUND: str | None = (
 )
 
 # Set this to the AudioManager sound filename when the catch sound is ready.
-CATCH_SOUND: str | None = None
+GRAB_SOUND: str | None = ("snd_grab.wav")
 
 
 # ---------------------------------------------------------------------------
@@ -62,8 +61,8 @@ ROOM_FADE_FRAMES = 8
 DAY_FADE_FRAMES = 24
 BLACK_HOLD_FRAMES = 15
 
-CAGE_X = 47.0
-CAGE_Y = 200.0
+CAGE_X = 170.0
+CAGE_Y = 165.0
 SOUL_START_X = CAGE_X + 10.0
 SOUL_START_Y = CAGE_Y + 7.0
 
@@ -93,8 +92,8 @@ KRIS_CATCH_SPEED = 5.0
 
 DAY_KRIS_X = 155.0
 DAY_KRIS_Y = 165.0
-DAY_PLACEHOLDER_BRIGHTNESS = 1.45
-DAY_PLACEHOLDER_COLOR = 0.82
+# DAY_PLACEHOLDER_BRIGHTNESS = 0
+# DAY_PLACEHOLDER_COLOR = 0.82
 
 
 # Canonical locations in the project's existing sprite organization.  Keeping
@@ -654,8 +653,8 @@ class OpeningScene:
         self._set_player_canvas_visible(True)
 
     def _cut_to_black(self) -> None:
-        if CATCH_SOUND:
-            self.game.audio.play_sound(CATCH_SOUND)
+        if GRAB_SOUND:
+            self.game.audio.play_sfx(GRAB_SOUND)
         self.game.fade_alpha = 255
         self.soul.visible = False
         self.game.player.invisible = True
@@ -761,8 +760,8 @@ class OpeningScene:
 
         # Temporary daytime treatment until the final room sprite exists.
         rgba = image.convert("RGBA")
-        bright = ImageEnhance.Brightness(rgba).enhance(DAY_PLACEHOLDER_BRIGHTNESS)
-        return ImageEnhance.Color(bright).enhance(DAY_PLACEHOLDER_COLOR)
+        # bright = ImageEnhance.Brightness(rgba).enhance(DAY_PLACEHOLDER_BRIGHTNESS)
+        # return ImageEnhance.Color(bright).enhance(DAY_PLACEHOLDER_COLOR)
 
     def _set_player_canvas_visible(self, visible: bool) -> None:
         item = self.game.player.canvas_sprite
@@ -774,7 +773,7 @@ class OpeningScene:
 
 
 __all__ = [
-    "CATCH_SOUND",
+    "GRAB_SOUND",
     "DAY_ROOM_BACKGROUND",
     "OpeningScene",
 ]
