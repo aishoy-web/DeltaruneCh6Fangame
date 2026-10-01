@@ -36,17 +36,3 @@ By the way, I told Fangamer not to expect to make too much merchandise for Chapt
 Anyway, there aren’t any more Chapters where we focus on goofy, 
 attention-hungry Darkner characters with the potential to win weird popularity contests.
 """
-"""
-Observations from existing gameplay/general forshadowing:
-Every secret boss has in someway forshadowed the next main boss of the following chapter.
-Jevil mentions Queen, Spamton mentions Mike and CRTs, Gerson mentions the field of Pink and Gold being consumed in an inferno of jealosy (Pink)...
-And the point of Pink's fight is wrestling over control of your body before eventually becoming whole.
-Now who do we know that struggles to control their actions?
-Kris.
-Therefore, Kris will either be the next main boss of the game, or the central source of the conflict. I found quite the compelling theory video...
-https://www.youtube.com/watch?v=7TEN6PSlFxg&t=1691s
-Oh great he's been swayed by another theory video!
-
-But if it's true, then all the previous thoughts about chapter 6 will be like...
-https://www.youtube.com/watch?v=-apX5FcEDZY
-"""

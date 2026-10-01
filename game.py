@@ -6,6 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 from animated_sprite import AnimatedSprite
+from effects import EffectManager
 from rooms import ROOMS
 from PIL import Image, ImageTk
 from ui_sprites import UISpriteSheet
@@ -299,6 +300,7 @@ class Game:
         self.load_room("mainMenu", play_music=False)
         self.player = Player(self)
         self.menu = Menu(self)
+        self.effects = EffectManager(self)
         self.opening_scene = OpeningScene(self)
         self.current_save_slot = None
         self.current_save_data = None
@@ -3135,6 +3137,7 @@ class Game:
         if not self.update_quit():
             return
         if self.transitioning:
+            self.effects.clear()
             self.update_transition()
             self.renderQuit()
             self.root.after(16, self.update)
@@ -3335,6 +3338,7 @@ class Game:
                 self.dialogue_box.update_position()
 
             self.render_dynamic()
+        self.effects.update()
         self.renderQuit()
         self.root.after(32, self.update) # Framerate, lower number = higher framerate
 

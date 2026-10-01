@@ -33,7 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # Replaceable assets
 # ---------------------------------------------------------------------------
 
-SOUL_IMAGE = "spr_heart_0.png"
+SOUL_IMAGE = "spr_heart.png"
 INTACT_CAGE_IMAGE = "spr_redwagon.png"
 BROKEN_CAGE_IMAGE = "spr_kris_room_wagon.png"
 
@@ -66,6 +66,8 @@ CAGE_Y = 165.0
 SOUL_START_X = CAGE_X + 10.0
 SOUL_START_Y = CAGE_Y + 7.0
 
+SOUL_VISUAL_SCALE = 1.0
+
 # The 16x16 SOUL only has a small amount of space between the wagon bars.  The
 # player can wiggle in that area until enough movement effort has accumulated.
 CAGE_SOUL_MIN_X = CAGE_X + 7.0
@@ -92,8 +94,6 @@ KRIS_CATCH_SPEED = 5.0
 
 DAY_KRIS_X = 155.0
 DAY_KRIS_Y = 165.0
-# DAY_PLACEHOLDER_BRIGHTNESS = 0
-# DAY_PLACEHOLDER_COLOR = 0.82
 
 
 # Canonical locations in the project's existing sprite organization.  Keeping
@@ -176,6 +176,7 @@ class OpeningSprite:
         y: float,
         *,
         tag: str,
+        visual_scale: float = 1.0,
     ) -> None:
         self.game = game
         self.x = float(x)
@@ -185,6 +186,8 @@ class OpeningSprite:
         self.canvas_item: int | None = None
         self.photo: ImageTk.PhotoImage | None = None
         self._last_scale: float | None = None
+        self.visual_scale = float(
+            visual_scale)
         self._shake_frames = 0
         self._shake_amount = 0.0
         self.set_image(filename)
@@ -211,14 +214,37 @@ class OpeningSprite:
                 self._shake_amount = 0.0
 
     def render(self) -> None:
-        scale = self.game.scale
-        if self.photo is None or self._last_scale != scale:
+        scale = (
+            self.game.scale
+            * self.visual_scale)
+        if (
+            self.photo is None
+            or self._last_scale != scale
+        ):
             size = (
-                max(1, round(self.width * scale)),
-                max(1, round(self.height * scale)),
+                max(
+                    1,
+                    round(
+                        self.width * scale
+                    )
+                ),
+                max(
+                    1,
+                    round(
+                        self.height * scale
+                    )
+                ),
             )
-            scaled = self.image.resize(size, Image.Resampling.NEAREST)
-            self.photo = ImageTk.PhotoImage(scaled)
+
+            scaled = self.image.resize(
+                size,
+                Image.Resampling.NEAREST
+            )
+
+            self.photo = ImageTk.PhotoImage(
+                scaled
+            )
+
             self._last_scale = scale
 
         draw_x = self.x
@@ -344,6 +370,7 @@ class OpeningScene:
             SOUL_START_X,
             SOUL_START_Y,
             tag="opening_soul",
+            visual_scale=SOUL_VISUAL_SCALE,
         )
         self.cage = OpeningSprite(
             self.game,
@@ -610,15 +637,38 @@ class OpeningScene:
     # ------------------------------------------------------------------
     # Kris enters, catches the SOUL, and morning begins
     # ------------------------------------------------------------------
+
+    def _kris_exclaim(self) -> None:
+        self.game.effects.exclaim(
+            self.game.player
+        )
+
     def _start_catch_sequence(self) -> None:
         if self.cutscene is None or self.phase != "roaming":
             return
+
         self.phase = "catch"
 
-        catch_x = min(self.game.game_width - 45.0, self.soul.x + 18.0)
+        catch_x = min(
+            self.game.game_width - 45.0,
+            self.soul.x + 18.0
+        )
         catch_y = self.soul.y - 27.0
 
-        self.cutscene.call(self._show_kris_at_front_door)
+        # Kris appears/enters through the front door.
+        self.cutscene.call(
+            self._show_kris_at_front_door
+        )
+
+        # Kris notices the escaped SOUL.
+        self.cutscene.call(
+            self._kris_exclaim
+        )
+
+        # Let the ! remain for its normal 20-frame lifetime.
+        self.cutscene.wait(20)
+
+        # Then Kris chases the SOUL.
         self.cutscene.select("kris")
         self.cutscene.walk_direct(
             catch_x,
@@ -626,10 +676,21 @@ class OpeningScene:
             -KRIS_CATCH_SPEED,
             wait_for_completion=True,
         )
+
         self.cutscene.wait(4)
-        self.cutscene.call(self._cut_to_black)
-        self.cutscene.wait(BLACK_HOLD_FRAMES)
-        self.cutscene.call(self._prepare_day_room)
+
+        self.cutscene.call(
+            self._cut_to_black
+        )
+
+        self.cutscene.wait(
+            BLACK_HOLD_FRAMES
+        )
+
+        self.cutscene.call(
+            self._prepare_day_room
+        )
+
         self.cutscene.lerp_var(
             self.game,
             "fade_alpha",
@@ -637,8 +698,15 @@ class OpeningScene:
             0,
             DAY_FADE_FRAMES,
         )
-        self.cutscene.wait(DAY_FADE_FRAMES)
-        self.cutscene.call(self._finish_opening)
+
+        self.cutscene.wait(
+            DAY_FADE_FRAMES
+        )
+
+        self.cutscene.call(
+            self._finish_opening
+        )
+
         self.cutscene.terminate()
         self.cutscene.resume_custom()
 
