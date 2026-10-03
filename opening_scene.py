@@ -43,8 +43,8 @@ DAY_ROOM_BACKGROUND: str | None = (
     "room_backgrounds/Dreemurr_residence_location_Kris's_room.png"
 )
 
-# Set this to the AudioManager sound filename when the catch sound is ready.
 GRAB_SOUND: str | None = ("snd_grab.wav")
+DOOR_OPEN_SOUND: str | None = ("snd_dooropen.wav")
 
 
 # ---------------------------------------------------------------------------
@@ -85,11 +85,35 @@ BREAKOUT_MOVEMENT_FRAMES = 105
 BREAKOUT_TARGET_Y = 177.0
 BREAKOUT_MOVE_FRAMES = 12
 
-# The current living room is 707 pixels wide.  Reaching its far-right portion
-# starts the placeholder Kris/catching sequence.
-LIVING_ROOM_CATCH_X = 590.0
+# ------------------------------------------------------------
+# Front-door / Kris catch sequence
+# ------------------------------------------------------------
+
+# Start the sequence earlier, farther to the left.
+LIVING_ROOM_DOOR_TRIGGER_X = 520.0
+
+# spr_torhouse_door placement.
+# These two are visual tuning values; adjust them until the
+# extracted door sprite exactly overlays the door in the room.
+FRONT_DOOR_X = 600.0
+FRONT_DOOR_Y = 105.0
+
 KRIS_FRONT_DOOR_X_MARGIN = 28.0
 KRIS_FRONT_DOOR_Y = 145.0
+
+DOOR_CLOSED_FRAME = 1
+DOOR_OPEN_FRAME = 0
+
+KRIS_SHOCK_FRAMES = 30
+
+# Tiny beat after the ! disappears before Kris launches forward.
+KRIS_POST_SHOCK_PAUSE_FRAMES = 2
+
+# Kris walks normally for this many room pixels before noticing.
+KRIS_NOTICE_WALK_DISTANCE = 42.0
+
+# Movement speeds passed to walk_direct().
+KRIS_ENTRY_SPEED = 1.5
 KRIS_CATCH_SPEED = 5.0
 
 DAY_KRIS_X = 155.0
@@ -110,6 +134,37 @@ ASSET_ALIASES: dict[str, tuple[str, ...]] = {
     SOUL_IMAGE: ("spr_heart.png",),
 }
 
+
+def _door_frame_paths() -> list[Path]:
+    folder = (
+        BASE_DIR
+        / "sprites"
+        / "assets"
+        / "spr_torhouse_door"
+    )
+
+    if not folder.is_dir():
+        raise FileNotFoundError(
+            f"Could not find front door sprite folder: {folder}"
+        )
+
+    frames = sorted(
+        path
+        for path in folder.iterdir()
+        if path.is_file()
+        and path.suffix.lower() in {
+            ".png",
+            ".gif",
+            ".webp",
+        }
+    )
+
+    if len(frames) < 2:
+        raise RuntimeError(
+            "spr_torhouse_door needs at least two extracted frames."
+        )
+
+    return frames
 
 def _asset_path(filename: str) -> Path:
     """Find an opening asset in common and nested project layouts.
@@ -322,6 +377,9 @@ class OpeningScene:
         self.cutscene: CutsceneMaster | None = None
         self.soul: SoulActor | None = None
         self.cage: OpeningSprite | None = None
+        self.front_door: OpeningSprite | None = None
+        self.front_door_frames: list[Path] = []
+        self.kris_exclaim_effect = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -425,6 +483,7 @@ class OpeningScene:
         # handles an external cancellation cleanly.
         if self.active and self.phase != "complete":
             self.stop()
+            self.kris_exclaim_effect = None
 
     def stop(self) -> None:
         self.active = False
@@ -434,6 +493,11 @@ class OpeningScene:
             self.cage.destroy()
         self.soul = None
         self.cage = None
+        if self.front_door is not None:
+            self.front_door.destroy()
+
+        self.front_door = None  
+        self.front_door_frames = []
 
     # ------------------------------------------------------------------
     # Per-frame update and control
@@ -444,6 +508,13 @@ class OpeningScene:
 
         if self.cage is not None:
             self.cage.update()
+
+# Temporary effects must continue advancing during cutscenes.
+# Do this BEFORE the cutscene update. That way, on the exact
+# frame the ! expires, it is removed before the cutscene is
+# allowed to continue into Kris's chase.
+        if hasattr(self.game, "effects"):
+            self.game.effects.update()
 
         if self.cutscene is not None and not self.cutscene.finished:
             self.cutscene.update()
@@ -605,31 +676,69 @@ class OpeningScene:
         self.cutscene.wait_custom()
         self.cutscene.resume_custom()
 
+    def _ensure_front_door(self) -> None:
+        if self.front_door is not None:
+            return
+
+        self.front_door_frames = _door_frame_paths()
+
+        self.front_door = OpeningSprite(
+            self.game,
+            str(
+                self.front_door_frames[
+                    DOOR_CLOSED_FRAME
+                ]
+            ),
+            FRONT_DOOR_X,
+            FRONT_DOOR_Y,
+            tag="opening_front_door",
+        )
+
     def _load_soul_room(self, room_exit: Any) -> None:
         self.game.load_room(
             room_exit.destination,
             room_exit.facing_direction,
             play_music=True,
         )
-        # Exit spawn points are authored for Kris's low foot hitbox. Preserve
-        # that hitbox position when the much smaller SOUL crosses the door;
-        # otherwise it can spawn inside a hallway wall.
-        player_hitbox_x = getattr(self.game.player, "hitbox_offset_x", 2.5)
-        player_hitbox_y = getattr(self.game.player, "hitbox_offset_y", 32.0)
-        self.soul.set_position(
-            room_exit.spawn_x + player_hitbox_x - SOUL_HITBOX_OFFSET,
-            room_exit.spawn_y + player_hitbox_y - SOUL_HITBOX_OFFSET,
+
+        player_hitbox_x = getattr(
+            self.game.player,
+            "hitbox_offset_x",
+            2.5,
         )
+        player_hitbox_y = getattr(
+            self.game.player,
+            "hitbox_offset_y",
+            32.0,
+        )
+
+        self.soul.set_position(
+            room_exit.spawn_x
+            + player_hitbox_x
+            - SOUL_HITBOX_OFFSET,
+
+            room_exit.spawn_y
+            + player_hitbox_y
+            - SOUL_HITBOX_OFFSET,
+        )
+
         self.game.camera_x = 0
         self.game.camera_y = 0
+
+        if self.game.room.name == LIVING_ROOM_ID:
+            self._ensure_front_door()
+
         self.game.render_static()
 
     def _check_catch_trigger(self) -> None:
         if self.game.room.name != LIVING_ROOM_ID or self.phase != "roaming":
             return
         trigger_x = min(
-            LIVING_ROOM_CATCH_X,
-            max(0.0, self.game.game_width - 70.0),
+            LIVING_ROOM_DOOR_TRIGGER_X,
+            max(
+                0.0,
+                self.game.game_width - 70.0,
+            ),
         )
         if self.soul.x >= trigger_x:
             self._start_catch_sequence()
@@ -638,44 +747,186 @@ class OpeningScene:
     # Kris enters, catches the SOUL, and morning begins
     # ------------------------------------------------------------------
 
-    def _kris_exclaim(self) -> None:
-        self.game.effects.exclaim(
-            self.game.player
+    def _open_front_door(self) -> None:
+        # Cut the room music immediately when the door opens.
+        # This makes the following silence part of the scene.
+        self.game.audio.stop_music()
+
+        # Switch closed door -> open door.
+        if (
+            self.front_door is not None
+            and len(self.front_door_frames) >= 2
+        ):
+            self.front_door.set_image(
+                str(
+                    self.front_door_frames[
+                        DOOR_OPEN_FRAME
+                    ]
+                )
+            )
+
+        # Door-opening sound remains audible in the silence.
+        if DOOR_OPEN_SOUND:
+            self.game.audio.play_sfx(
+                DOOR_OPEN_SOUND
+            )
+
+
+    def _set_kris_walk_animation(self) -> None:
+        player = self.game.player
+
+        player.animation.animation_speed = (
+            player.walk_animation_speed
         )
 
+
+    def _set_kris_run_animation(self) -> None:
+        player = self.game.player
+
+        player.speed = KRIS_CATCH_SPEED
+
+        player.animation.animation_speed = (
+            player.run_animation_speed
+        )
+
+    def _kris_exclaim(self) -> None:
+        self.kris_exclaim_effect = (
+            self.game.effects.exclaim(
+                self.game.player,
+                duration=KRIS_SHOCK_FRAMES,
+            )
+        )
+
+    def _kris_exclaim_finished(self) -> bool:
+        effect = self.kris_exclaim_effect
+        if effect is None:
+            return True
+        return effect.finished
+
+    def _freeze_kris_in_shock(self) -> None:
+        player = self.game.player
+        player.speed = 0
+        # Stop the animation immediately rather than waiting for
+        # the next walking rest frame.
+        player.animation.stop()
+
     def _start_catch_sequence(self) -> None:
-        if self.cutscene is None or self.phase != "roaming":
+        if (
+            self.cutscene is None
+            or self.phase != "roaming"
+        ):
             return
 
         self.phase = "catch"
 
+        # --------------------------------------------------------
+        # Positions
+        # --------------------------------------------------------
+
+        kris_start_x = max(
+            0.0,
+            self.game.game_width
+            - KRIS_FRONT_DOOR_X_MARGIN,
+        )
+
+        notice_x = (
+            kris_start_x
+            - KRIS_NOTICE_WALK_DISTANCE
+        )
+
         catch_x = min(
             self.game.game_width - 45.0,
-            self.soul.x + 18.0
+            self.soul.x + 18.0,
         )
-        catch_y = self.soul.y - 27.0
 
-        # Kris appears/enters through the front door.
+        catch_y = (
+            self.soul.y - 27.0
+        )
+
+        # --------------------------------------------------------
+        # Door opens.
+        # --------------------------------------------------------
+
+        self.cutscene.call(
+            self._open_front_door
+        )
+
+        # --------------------------------------------------------
+        # Kris becomes visible at the doorway.
+        #
+        # There is deliberately NO wait between opening the door
+        # and beginning the walk.
+        # --------------------------------------------------------
+
         self.cutscene.call(
             self._show_kris_at_front_door
         )
 
+        self.cutscene.select(
+            "kris"
+        )
+
+        # --------------------------------------------------------
+        # Slow entrance.
+        #
+        # Negative third argument means "move at this speed"
+        # rather than "take this many frames".
+        # --------------------------------------------------------
+
+        self.cutscene.walk_direct(
+            notice_x,
+            KRIS_FRONT_DOOR_Y,
+            -KRIS_ENTRY_SPEED,
+            wait_for_completion=True,
+        )
+
+        # --------------------------------------------------------
         # Kris notices the escaped SOUL.
+        # --------------------------------------------------------
+
+        # Stop dead the instant Kris recognizes what they're seeing.
+        self.cutscene.call(
+            self._freeze_kris_in_shock
+        )
+
+        # Show the ! and play snd_b.
         self.cutscene.call(
             self._kris_exclaim
         )
 
-        # Let the ! remain for its normal 20-frame lifetime.
-        self.cutscene.wait(20)
+        # Do NOT merely wait the same number of frames.
+        #
+        # Wait until EffectManager has actually expired and removed
+        # the exclamation.
+        self.cutscene.wait_until(
+            self._kris_exclaim_finished
+        )
 
-        # Then Kris chases the SOUL.
-        self.cutscene.select("kris")
+        # Give the disappearance a tiny visual beat of its own.
+        # Kris remains completely motionless here.
+        self.cutscene.wait(
+            KRIS_POST_SHOCK_PAUSE_FRAMES
+        )
+
+        # --------------------------------------------------------
+        # The ! is now completely gone.
+        # Kris snaps into pursuit.
+        # --------------------------------------------------------
+
+        self.cutscene.call(
+            self._set_kris_run_animation
+        )
+
         self.cutscene.walk_direct(
             catch_x,
             catch_y,
             -KRIS_CATCH_SPEED,
             wait_for_completion=True,
         )
+
+        # --------------------------------------------------------
+        # Catch.
+        # --------------------------------------------------------
 
         self.cutscene.wait(4)
 
@@ -712,13 +963,25 @@ class OpeningScene:
 
     def _show_kris_at_front_door(self) -> None:
         player = self.game.player
+
         player.room = self.game.room
-        player.x = max(0.0, self.game.game_width - KRIS_FRONT_DOOR_X_MARGIN)
+
+        player.x = max(
+            0.0,
+            self.game.game_width
+            - KRIS_FRONT_DOOR_X_MARGIN,
+        )
+
         player.y = KRIS_FRONT_DOOR_Y
+
         player.invisible = False
         player.set_facing("left")
-        player.start_walking()
-        self._set_player_canvas_visible(True)
+
+        self._set_kris_walk_animation()
+
+        self._set_player_canvas_visible(
+            True
+        )
 
     def _cut_to_black(self) -> None:
         if GRAB_SOUND:
@@ -758,6 +1021,7 @@ class OpeningScene:
         self.game.was_moving = False
         self.game.fade_alpha = 0
         self.stop()
+        self.kris_exclaim_effect = None
         self.game.render_static()
         self.game.render_dynamic()
 
@@ -794,6 +1058,21 @@ class OpeningScene:
         if not self.active and self.phase != "complete":
             return
         self.game.render_background_dynamic()
+        if self.front_door is not None:
+            if (
+                self.game.room.name
+                == LIVING_ROOM_ID
+            ):
+                self.front_door.render()
+
+            elif (
+                self.front_door.canvas_item
+                is not None
+            ):
+                self.game.canvas.itemconfigure(
+                    self.front_door.canvas_item,
+                    state="hidden",
+                )
 
         # Draw the SOUL before the intact cage so the bars remain in front.
         if self.soul is not None:

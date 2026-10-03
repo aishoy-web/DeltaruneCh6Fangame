@@ -171,7 +171,7 @@ class Game:
         self.quit_final_hold = 0.15
         
         #other init
-        self.debug_mode = True # Set to True to view player coordinates and collision hitboxes for player and collision
+        self.debug_mode = False # Set to True to view player coordinates and collision hitboxes for player and collision
         self.widescreen_mode = False
         self.transitioning = False
         self.fade_alpha = 0
