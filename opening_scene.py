@@ -45,6 +45,7 @@ DAY_ROOM_BACKGROUND: str | None = (
 
 GRAB_SOUND: str | None = ("snd_grab.wav")
 DOOR_OPEN_SOUND: str | None = ("snd_dooropen.wav")
+ESCAPE_MUSIC = "mus_undynescary.ogg"
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ CAGE_SOUL_MAX_Y = CAGE_Y + 9.0
 
 SOUL_SPEED = 1.5
 SOUL_HITBOX_OFFSET = 4.0
-SOUL_HITBOX_SIZE = 8.0
+SOUL_HITBOX_SIZE = 7.0
 
 FIRST_CAGE_SHAKE = 35
 SECOND_CAGE_SHAKE = 70
@@ -90,19 +91,29 @@ BREAKOUT_MOVE_FRAMES = 12
 # ------------------------------------------------------------
 
 # Start the sequence earlier, farther to the left.
-LIVING_ROOM_DOOR_TRIGGER_X = 520.0
+LIVING_ROOM_DOOR_TRIGGER_X = 500.0
 
 # spr_torhouse_door placement.
 # These two are visual tuning values; adjust them until the
 # extracted door sprite exactly overlays the door in the room.
-FRONT_DOOR_X = 600.0
-FRONT_DOOR_Y = 105.0
+FRONT_DOOR_X = 567.0
+FRONT_DOOR_Y = 110.0
 
-KRIS_FRONT_DOOR_X_MARGIN = 28.0
-KRIS_FRONT_DOOR_Y = 145.0
+KRIS_FRONT_DOOR_X_MARGIN = 100.0
+KRIS_FRONT_DOOR_Y = 125.0
 
 DOOR_CLOSED_FRAME = 1
 DOOR_OPEN_FRAME = 0
+
+DOOR_FRAME_FOLDER = "spr_torhouse_door_frame"
+
+# Original GML has:
+# door       = (572, 116)
+# door frame = (611, 56)
+#
+# So the frame is +39 X and -60 Y relative to the door.
+FRONT_DOOR_FRAME_OFFSET_X = 39.0
+FRONT_DOOR_FRAME_OFFSET_Y = -60.0
 
 KRIS_SHOCK_FRAMES = 30
 
@@ -165,6 +176,44 @@ def _door_frame_paths() -> list[Path]:
         )
 
     return frames
+
+def _front_door_frame_path() -> Path:
+    folder = (
+        BASE_DIR
+        / "sprites"
+        / "assets"
+        / "spr_torhouse_door_frame"
+    )
+
+    # In case yours is extracted directly as one PNG.
+    direct = (
+        BASE_DIR
+        / "sprites"
+        / "assets"
+        / "spr_torhouse_door_frame.png"
+    )
+
+    if direct.is_file():
+        return direct
+
+    if folder.is_dir():
+        frames = sorted(
+            path
+            for path in folder.iterdir()
+            if path.is_file()
+            and path.suffix.lower() in {
+                ".png",
+                ".gif",
+                ".webp",
+            }
+        )
+
+        if frames:
+            return frames[0]
+
+    raise FileNotFoundError(
+        "Could not find spr_torhouse_door_frame."
+    )
 
 def _asset_path(filename: str) -> Path:
     """Find an opening asset in common and nested project layouts.
@@ -379,6 +428,7 @@ class OpeningScene:
         self.cage: OpeningSprite | None = None
         self.front_door: OpeningSprite | None = None
         self.front_door_frames: list[Path] = []
+        self.front_door_foreground: OpeningSprite | None = None
         self.kris_exclaim_effect = None
 
     # ------------------------------------------------------------------
@@ -418,7 +468,7 @@ class OpeningScene:
         except Exception:
             pass
 
-        self.game.load_room(NIGHT_ROOM_ID, play_music=True)
+        self.game.load_room(NIGHT_ROOM_ID, play_music=False)
         self.game.player.invisible = True
         self._set_player_canvas_visible(False)
 
@@ -495,6 +545,11 @@ class OpeningScene:
         self.cage = None
         if self.front_door is not None:
             self.front_door.destroy()
+
+        if self.front_door_foreground is not None:
+            self.front_door_foreground.destroy()
+
+        self.front_door_foreground = None
 
         self.front_door = None  
         self.front_door_frames = []
@@ -628,9 +683,23 @@ class OpeningScene:
             BREAKOUT_MOVE_FRAMES,
             wait_for_completion=True,
         )
-        self.cutscene.call(self._enable_roaming)
+
+        # The SOUL is now fully out of the cage.
+        self.cutscene.call(
+            self._start_escape_music
+        )
+
+        self.cutscene.call(
+            self._enable_roaming
+        )
         self.cutscene.wait_custom()
         self.cutscene.resume_custom()
+
+    def _start_escape_music(self) -> None:
+        self.game.audio.play_music(
+            ESCAPE_MUSIC,
+            loop=True,
+        )
 
     def _show_broken_cage(self) -> None:
         if self.cage is not None:
@@ -694,11 +763,25 @@ class OpeningScene:
             tag="opening_front_door",
         )
 
+        self.front_door_foreground = OpeningSprite(
+            self.game,
+            str(_front_door_frame_path()),
+            (
+                FRONT_DOOR_X
+                + FRONT_DOOR_FRAME_OFFSET_X
+            ),
+            (
+                FRONT_DOOR_Y
+                + FRONT_DOOR_FRAME_OFFSET_Y
+            ),
+            tag="opening_front_door_frame",
+        )
+
     def _load_soul_room(self, room_exit: Any) -> None:
         self.game.load_room(
             room_exit.destination,
             room_exit.facing_direction,
-            play_music=True,
+            play_music=False,
         )
 
         player_hitbox_x = getattr(
@@ -746,6 +829,13 @@ class OpeningScene:
     # ------------------------------------------------------------------
     # Kris enters, catches the SOUL, and morning begins
     # ------------------------------------------------------------------
+
+    def _hide_front_door_layers(self) -> None:
+        if self.front_door is not None:
+            self.front_door.hide()
+
+        if self.front_door_foreground is not None:
+            self.front_door_foreground.hide()
 
     def _open_front_door(self) -> None:
         # Cut the room music immediately when the door opens.
@@ -983,10 +1073,27 @@ class OpeningScene:
             True
         )
 
+    def _remove_front_door_layers(self) -> None:
+        if self.front_door is not None:
+            self.front_door.destroy()
+            self.front_door = None
+
+        if self.front_door_foreground is not None:
+            self.front_door_foreground.destroy()
+            self.front_door_foreground = None
+
+        self.front_door_frames = []
+
     def _cut_to_black(self) -> None:
         if GRAB_SOUND:
-            self.game.audio.play_sfx(GRAB_SOUND)
+            self.game.audio.play_sfx(
+                GRAB_SOUND
+            )
+
         self.game.fade_alpha = 255
+
+        self._remove_front_door_layers()
+
         self.soul.visible = False
         self.game.player.invisible = True
         self._set_player_canvas_visible(False)
@@ -1088,10 +1195,50 @@ class OpeningScene:
 
         if not self.game.player.invisible:
             self.game.player.render()
+
             if self.game.player.canvas_sprite is not None:
-                self.game.canvas.tag_raise(self.game.player.canvas_sprite)
+                self.game.canvas.tag_raise(
+                    self.game.player.canvas_sprite
+                )
+
             self.game.player.animation.update()
 
+
+        # --------------------------------------------------------
+        # Front wall / doorway occlusion
+        #
+        # Must render AFTER Kris so Kris disappears behind the
+        # angled front wall while entering.
+        # --------------------------------------------------------
+
+        if self.front_door_foreground is not None:
+
+            if (
+                self.game.room.name == LIVING_ROOM_ID
+                and self.front_door_foreground.visible
+            ):
+                self.front_door_foreground.render()
+
+            elif self.front_door_foreground.canvas_item is not None:
+                self.game.canvas.itemconfigure(
+                    self.front_door_foreground.canvas_item,
+                    state="hidden",
+                )
+
+
+        # --------------------------------------------------------
+        # Emotes / temporary effects
+        #
+        # The doorway foreground needs to cover Kris, but reaction
+        # bubbles such as "!" must appear above the architecture.
+        # --------------------------------------------------------
+
+        self.game.canvas.tag_raise(
+            "effects"
+        )
+
+
+        # Fade remains absolutely on top.
         self.game.render_fade()
 
     def apply_room_variant(self, room_id: str, image: Image.Image) -> Image.Image:

@@ -12,6 +12,10 @@ from PIL import Image, ImageTk
 from ui_sprites import UISpriteSheet
 from hud import HUD
 from player import Player
+from battle import BattleController, PartySpawn
+from encounter_setup import setup_encounter
+from battle_view import BattleCanvasView
+from battle_combat import BattleCombatController
 from fileselect import FileMenu
 from dialogue_box import DialogueBox
 from dialogue_writer import DialogueWriter
@@ -301,6 +305,48 @@ class Game:
         self.player = Player(self)
         self.menu = Menu(self)
         self.effects = EffectManager(self)
+        # GML battle entry is an independent phase, not a substate of Menu.
+        # Chapter 6 currently has Kris as the only implemented overworld actor.
+        # Future Dark World code may set battle_party_ids / pass follower origins.
+        self.battle_flags = {}
+        self.battle_party_ids = (1,)
+        self.battle_layout = None
+        self.combat = None  # obj_battlecontroller; created on frame-24 handoff
+        self.battle_action_queue = []
+        self.battle_party_stats = {}  # Dark World stats, once available
+        # Enemy-specific GameMaker User[12], User[15], ACT-reset, and
+        # end_turn_action handlers can be registered using MonsterHooks.
+        self.battle_monster_hooks = {}
+        self.battle_party_auto = {}  # global.charauto[character_id]
+        self.battle_wincombat_callback = None  # optional scr_wincombat notification hook
+        self.battle_endturn_callback = None    # Optional post-scr_endturn notification
+        # The three scr_* routines are now built into BattleCombatController.
+        # These callbacks are optional notifications or future object adapters.
+        self.battle_attack_phase_callback = None
+        self.battle_next_act_callback = None
+        self.battle_act_simul_callback = None
+        self.battle_attack_press_callback = None   # obj_attackpress Create / Step
+        self.battle_spell_phase_callback = None    # obj_spellphase Create / Step
+        self.battle_act_started_callback = None    # enemy-specific ACT event
+        self.battle_equipped_armors = {}          # party position + 1: armor IDs
+        self.battle_heal_callback = None       # scr_heal, optional modifier hook
+        self.battle_cursor_reset_callback = None
+        self.battle_equipped_weapons = {}  # charweapon[character_id]
+        self.battle_max_tension = 100  # Replace when DW party globals are available
+        self.battle_ambush = 0  # 0=normal, 1=scr_ambush pending, 2=enemy first strike
+        self.battle_inventory = []  # global.item[], NOT LW_inventory
+        self.dark_world_gold = 0
+        self.dark_world_xp = 0
+        self._battle_music_started = False
+        self._battle_original_flag9 = 0
+        self.battle_view = BattleCanvasView(self)
+        self.battle = BattleController(
+            on_music_fade=self._battle_fade_overworld_music,
+            on_music_pause=self._battle_pause_overworld_music,
+            on_afterimage=self.battle_view.add_afterimage,
+            on_sound=self._battle_play_sound,
+            on_controller_start=self._battle_controller_handoff,
+        )
         self.opening_scene = OpeningScene(self)
         self.current_save_slot = None
         self.current_save_data = None
@@ -2254,6 +2300,10 @@ class Game:
             self._set_file_menu_visible(False)
             self.opening_scene.render()
 
+        elif self.state in ("battle_intro", "battle_ready"):
+            if self.battle.state is not None:
+                self.battle_view.render(self.battle.state, self.combat)
+
         if self.fade_alpha > 0:
             self.render_fade()
 
@@ -2307,6 +2357,11 @@ class Game:
 
         if self.state == "opening_scene":
             self.opening_scene.render()
+            return
+
+        if self.state in ("battle_intro", "battle_ready"):
+            if self.battle.state is not None:
+                self.battle_view.render(self.battle.state, self.combat)
             return
 
         self.render_background_dynamic()
@@ -2817,6 +2872,11 @@ class Game:
             break
 
     def handle_z(self, event=None):
+        # <space> is bound separately from KeyPress in this game. It must
+        # reach the battle menu just like the normal Z confirm key.
+        if self.state == "battle_ready" and self.combat is not None:
+            self.combat.handle_key("z")
+            return
         if self.transitioning:
             return
 
@@ -2893,6 +2953,14 @@ class Game:
         if self.state == "opening_scene":
             # Direction state is already recorded in keys_pressed above. The
             # opening controller reads held keys once per logical frame.
+            return
+
+        if self.state in ("battle_intro", "battle_ready"):
+            # F12 is development-only emergency exit. X now navigates menus.
+            if key == "F12":
+                self.end_battle_preview()
+            elif self.state == "battle_ready" and self.combat is not None:
+                self.combat.handle_key(key)
             return
 
         # Dialogue button2 / X skips the remainder of a skippable page.
@@ -3131,6 +3199,269 @@ class Game:
         # End the program and close the game
         self.root.destroy()
         #yeah thats kinda it just call this function to close the game lol
+    # ======================================================
+    # BATTLE ENTRY / scr_battle + scr_encountersetup
+    # ======================================================
+    def start_battle(
+        self,
+        encounter_no,
+        special_battle=0,
+        *,
+        party_ids=None,
+        follower_origins=None,
+        follower_sprites=None,
+        enemy_sprites=None,
+        npc_origin=None,
+    ):
+        """Begin an encounter using the original 640x480 GML stage layout.
+
+        `follower_origins` are optional world pixel (320x240-scale)
+        positions, one per non-Kris member, in party order.  No follower
+        objects currently exist in game.py, so explicit locations are
+        required when asking for more than one party member.
+        """
+        if self.state != "playing":
+            raise RuntimeError("An encounter can only begin during overworld play")
+        if self.battle.state is not None:
+            raise RuntimeError("Another encounter is already active")
+
+        party_ids = tuple(self.battle_party_ids if party_ids is None else party_ids)
+        if not party_ids or party_ids[0] != 1 or len(party_ids) > 3:
+            raise ValueError("Party must have Kris first and at most three members")
+        origins = list(follower_origins or ())
+        if len(origins) < len(party_ids) - 1:
+            raise ValueError("Supply overworld origins for every requested follower")
+        follower_sprites = list(follower_sprites or ())
+
+        layout = setup_encounter(
+            int(encounter_no), party_ids,
+            flags=self.battle_flags,
+            npc_origin=npc_origin,
+            enemy_sprites=enemy_sprites,
+        )
+        self.battle_layout = layout
+        self._battle_original_flag9 = self.battle_flags.get(9, 0)
+
+        # GML camera coordinates are twice this game's logical coordinates.
+        # Battle scene coordinates are viewport-relative, not room-world.
+        def screen_origin(world_x, world_y):
+            return (2 * (world_x - self.camera_x),
+                    2 * (world_y - self.camera_y))
+
+        names = {1: "kris", 2: "susie", 3: "ralsei", 4: "noelle"}
+        default_sprites = {2: "spr_susier_dark", 3: "spr_ralsei_dark",
+                           4: "spr_noelle_dark"}
+        party = []
+        for i, char_id in enumerate(party_ids):
+            wx, wy = ((self.player.x, self.player.y) if i == 0
+                      else origins[i - 1])
+            px, py = screen_origin(wx, wy)
+            tx, ty = layout.hero_positions[i]
+            party.append(PartySpawn(
+                character_id=char_id,
+                x=px, y=py, battle_x=tx, battle_y=ty,
+                overworld_sprite=(follower_sprites[i - 1]
+                                  if i > 0 and i - 1 < len(follower_sprites)
+                                  else default_sprites.get(char_id, "")),
+                name=names.get(char_id, ""),
+            ))
+
+        # Opening the battle hides regular overworld widgets and blocks input;
+        # the view overlays the existing Canvas until combat drawing is ported.
+        self.menu.close()
+        self.hud.close()
+        self.keys_pressed.clear()
+        self.direction_keys.clear()
+        self.was_moving = False
+        self.player.animation.stop_at_next_rest_frame()
+        if self.dialogue_writer.active:
+            self.dialogue_writer.stop(hide_box=True)
+        self.dialogue_box.hide()
+
+        self.combat = None
+        self.battle_action_queue = []
+        self.battle_view.start(layout)
+        state = self.battle.start_battle(
+            encounter_no=int(encounter_no),
+            special_battle=int(special_battle),
+            enemy_slots=layout.enemy_slots,
+            flags=self.battle_flags,
+            chapter=6,
+            party_members=party,
+        )
+        self.state = "battle_intro"
+        self.battle_view.render(state)
+        return state
+
+    def _battle_fade_overworld_music(self, state, frames):
+        # Backends using pygame.mixer.music can use its native fadeout.
+        # Never assume AudioManager exposes unverified fade_music methods.
+        try:
+            import pygame
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pygame.mixer.music.fadeout(round(frames * 1000 / 60))
+        except (ImportError, RuntimeError, AttributeError):
+            pass
+
+    def _battle_pause_overworld_music(self, state):
+        pause = getattr(self.audio, "pause_music", None)
+        if callable(pause):
+            pause()
+            return
+        try:
+            import pygame
+            if pygame.mixer.get_init():
+                pygame.mixer.music.pause()
+        except (ImportError, RuntimeError, AttributeError):
+            pass
+
+    def _battle_play_sound(self, sound_name, volume, state):
+        # Temporary .wav hookup. The final battle audio registry can apply
+        # GML's per-instance 0.7 / 0.8 sound volumes when it is available.
+        self._play_optional_item_sfx(f"{sound_name}.wav")
+
+    def _battle_hero_sound(self, sound_name, pitch, actor):
+        """Play available hero swing SFX; true pitch control needs an audio adapter."""
+        custom = getattr(self, "battle_hero_sound_callback", None)
+        if callable(custom):
+            custom(sound_name, pitch, actor)
+        else:
+            self._play_optional_item_sfx(f"{sound_name}.wav")
+
+    def _battle_controller_handoff(self, state):
+        # obj_battlecontroller Create occurs precisely on entry frame 24.
+        # No Light World HP, weapons or items are reused as Dark World data.
+        from battle_combat import BattleCombatController
+        self.combat = BattleCombatController(
+            self.battle_layout,
+            [marker.character_id for marker in state.party_markers],
+            self.battle_flags,
+            chapter=state.chapter,
+            party_stats=getattr(self, "battle_party_stats", {}),
+            equipped_weapons=getattr(self, "battle_equipped_weapons", {}),
+            max_tension=getattr(self, "battle_max_tension", 100),
+            ambush=getattr(self, "battle_ambush", 0),
+            inventory=getattr(self, "battle_inventory", ()),
+            gold=getattr(self, "dark_world_gold", 0),
+            xp=getattr(self, "dark_world_xp", 0),
+            music=state.music_to_load,
+            on_actions_ready=getattr(self, "_battle_actions_ready", None),
+            on_victory_finished=getattr(self, "_battle_victory_finished", None),
+            monster_hooks=getattr(self, "battle_monster_hooks", {}),
+            party_auto=getattr(self, "battle_party_auto", {}),
+            on_wincombat=getattr(self, "battle_wincombat_callback", None),
+            on_endturn=getattr(self, "battle_endturn_callback", None),
+            on_heal=getattr(self, "battle_heal_callback", None),
+            on_cursor_memory_reset=getattr(self, "battle_cursor_reset_callback", None),
+            equipped_armors=getattr(self, "battle_equipped_armors", {}),
+            on_attack_phase=getattr(self, "battle_attack_phase_callback", None),
+            on_next_act=getattr(self, "battle_next_act_callback", None),
+            on_act_simul=getattr(self, "battle_act_simul_callback", None),
+            on_attack_press_start=getattr(self, "battle_attack_press_callback", None),
+            on_spell_phase_start=getattr(self, "battle_spell_phase_callback", None),
+            on_bolt_check=getattr(self, "battle_bolt_check_callback", None),
+            on_hero_attack=getattr(self, "battle_hero_attack_callback", None),
+            on_hero_damage=getattr(self, "battle_hero_damage_callback", None),
+            on_hero_retarget=getattr(self, "battle_hero_retarget_callback", None),
+            on_hero_sound=getattr(self, "_battle_hero_sound", None),
+            on_spell_effect=getattr(self, "battle_spell_effect_callback", None),
+            on_spell_animation=getattr(self, "battle_spell_animation_callback", None),
+            on_spell_heal_modifier=getattr(self, "battle_spell_heal_modifier_callback", None),
+            sprite_frame_counts=getattr(self, "battle_sprite_frame_counts", None),
+            on_spell_cast=getattr(self, "battle_spell_cast_callback", None),
+            on_spell_retarget=getattr(self, "battle_spell_retarget_callback", None),
+            on_spell_text_id=getattr(self, "battle_spell_text_id_callback", None),
+            on_spell_item_shift=getattr(self, "battle_spell_item_shift_callback", None),
+            on_spell_mercy_add=getattr(self, "battle_spell_mercy_add_callback", None),
+            on_attack_press_finished=getattr(self, "battle_attack_press_finished_callback", None),
+            on_act_started=getattr(self, "battle_act_started_callback", None),
+            on_chained_encounter=getattr(self, "_battle_chained_encounter", None),
+            on_turn_committed=getattr(self, "_battle_turn_committed", None),
+        )
+        self.state = "battle_ready"
+        # The original scr_ambush routine is not yet ported; keep its pending
+        # signal until that hook exists. Ambush 2 is fully initialized.
+        if getattr(self, "battle_ambush", 0) == 2:
+            self.battle_ambush = 0
+        play = getattr(self, "_battle_start_music", None)
+        if callable(play):
+            play(state)
+
+    def _battle_chained_encounter(self, combat_state, layout):
+        """Same battle and music; switch to the next wave's layout."""
+        self.battle_layout = layout
+        self.battle_view.start(layout)
+        self.battle_action_queue = []
+
+    def _battle_turn_committed(self, combat_state):
+        """Propagate committed Dark World item slots back to Game."""
+        if self.combat is not None:
+            self.battle_inventory = list(self.combat.inventory_snapshot())
+
+    def _battle_actions_ready(self, actions):
+        """Capture chosen commands for the future action-resolution scripts."""
+        self.battle_action_queue = list(actions)
+
+    def _battle_victory_finished(self, combat_state):
+        # The win routine already calculated the Dark World rewards.
+        self.dark_world_gold = combat_state.gold
+        self.dark_world_xp = combat_state.xp
+        self.end_battle_preview()
+
+    def _battle_start_music(self, entry_state):
+        """GML mus_loop_ext if a battle music asset is installed."""
+        self._battle_music_started = False
+        if not entry_state.fade_overworld_music or not entry_state.music_to_load:
+            return
+        name = entry_state.music_to_load
+        candidates = (
+            BASE_DIR / "music" / name,
+            BASE_DIR / "audio" / name,
+            BASE_DIR / "audio" / "music" / name,
+            BASE_DIR / name,
+        )
+        if not any(path.is_file() for path in candidates):
+            return  # An absent asset must not crash the battle entry.
+        play = getattr(self.audio, "play_music", None)
+        if callable(play):
+            try:
+                play(name)
+                self._battle_music_started = True
+            except (OSError, RuntimeError, ValueError):
+                pass
+
+    def end_battle_preview(self):
+        """Remove the battle view and restore overworld after abort or victory."""
+        if self.state not in ("battle_intro", "battle_ready"):
+            return
+        self.battle_view.hide()
+        self.battle.end_battle()
+        self.combat = None
+        self.battle_action_queue = []
+        self.battle_layout = None
+        self.battle_flags[9] = self._battle_original_flag9
+        if getattr(self, "_battle_music_started", False):
+            previous_music = getattr(self.room, "music", None)
+            play = getattr(self.audio, "play_music", None)
+            if previous_music and callable(play):
+                try:
+                    play(previous_music)
+                except (OSError, RuntimeError, ValueError):
+                    pass
+        self._battle_music_started = False
+        unpause = getattr(self.audio, "unpause_music", None)
+        if callable(unpause):
+            unpause()
+        else:
+            try:
+                import pygame
+                if pygame.mixer.get_init():
+                    pygame.mixer.music.unpause()
+            except (ImportError, RuntimeError, AttributeError):
+                pass
+        self.state = "playing"
+        self.render_dynamic()
+
     #Main Update function
     def update(self):
         #obj_time exists outside of individual room/game logic
@@ -3215,6 +3546,21 @@ class Game:
             self.opening_scene.update()
             self.renderQuit()
             self.root.after(self.opening_scene.FRAME_MS, self.update)
+            return
+
+        if self.state in ("battle_intro", "battle_ready"):
+            # obj_encounterbasic disappears at frame 24, but obj_doom's
+            # remaining 25-frame alarm continues independently on frame 25.
+            battle_state = self.battle.state
+            if battle_state is not None and not battle_state.intro_complete:
+                self.battle.update(1.0)
+            if self.state == "battle_ready" and self.combat is not None:
+                self.combat.update(1)
+            if battle_state is not None and self.battle.state is battle_state:
+                self.battle_view.render(battle_state, self.combat)
+            self.renderQuit()
+            # The recovered Step/Draw code advances on a 60 FPS timeline.
+            self.root.after(16, self.update)
             return
 
         if self.state == "playing":
