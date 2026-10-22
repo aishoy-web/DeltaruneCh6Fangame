@@ -24,6 +24,7 @@ import json
 from audiomanager import AudioManager
 from menu import Menu
 from progress import ProgressTracker
+from overworld_runtime import OverworldGlobals, OverworldRuntime
 from chapter_intro import ChapterIntro
 from legend import LegendSequence
 from chapter_logo import ChapterLogoSequence
@@ -295,6 +296,15 @@ class Game:
 
         # Numeric Light World flags used by item-specific behavior.
         self.light_world_flags = {}
+        # Recovered GML uses one persistent global plot value plus indexed flags.
+        # Keep the Light World item flags and global.flag synchronized.
+        self.global_state = OverworldGlobals(
+            chapter=6,
+            flag=self.light_world_flags,
+        )
+        # Game handles Tk/window/files; recovered object Create/Step events
+        # live in this room-scoped adapter and their individual Python ports.
+        self.overworld = OverworldRuntime(self)
 
         # ITEM / INFO / DROP dialogue now uses the same DialogueWriter
         # as room and trigger dialogue.  No separate Tk after() typewriter
@@ -303,6 +313,11 @@ class Game:
         # Create basic game objects
         self.load_room("mainMenu", play_music=False)
         self.player = Player(self)
+        # obj_mainchara alias for recovered `with (obj_mainchara)` scripts.
+        self.mainchara = self.player
+        self.player.onebuffer = 0
+        self.player.interactedobject = -4
+        self.player.disable_interaction_checks = False
         self.menu = Menu(self)
         self.effects = EffectManager(self)
         # GML battle entry is an independent phase, not a substate of Menu.
@@ -783,6 +798,23 @@ class Game:
             )
         )
         save_data = save_data or {}
+        # Restore permanent Chapter 6 progression before any room-controller
+        # Create event. This must not be replaced by transient `con` state.
+        self.global_state.plot = int(save_data.get("plot", 0))
+        raw_flags = save_data.get("light_world_flags", {})
+        self.light_world_flags.clear()
+        if isinstance(raw_flags, dict):
+            self.light_world_flags.update({
+                int(k): int(v) for k, v in raw_flags.items()
+            })
+        # Recovered Chapter 5 flag[914] also has a legacy Game field.
+        # Preserve compatibility while exposing the authoritative indexed flag.
+        if 914 in self.light_world_flags:
+            self.kris_preservation_society = int(self.light_world_flags[914])
+        elif self.kris_preservation_society:
+            self.light_world_flags[914] = self.kris_preservation_society
+        self.global_state.flag = self.light_world_flags
+        self.global_state.interact = 0
 
         self.lweapon = int(
             save_data.get(
@@ -2201,7 +2233,15 @@ class Game:
             anchor = "nw"
         )
         self.fade_photo = None
-    def load_room(self, room_id, facing_direction = None, play_music = True):
+    def load_room(self, room_id, facing_direction=None, play_music=True,
+                  *, spawn=None):
+        """Load room RESOURCE and then invoke its object controller's Create.
+
+        Supply spawn when changing rooms so GML Create sees Kris at the new
+        location instead of the previous room's position.
+        """
+        if spawn is not None and hasattr(self, "player"):
+            self.player.x, self.player.y = spawn
         room = ROOMS[room_id]
         self.room = room
 
@@ -2260,6 +2300,17 @@ class Game:
                 self.player.animation.stop()
         if play_music and room.music:
             self.audio.play_music(room.music)
+
+        # The visual room resource is loaded above; now instantiate its
+        # GameMaker-style room controller and room-local object instances.
+        if hasattr(self, "overworld"):
+            self.global_state.darkzone = int(
+                getattr(room, "darkzone", self.global_state.darkzone)
+            )
+            self.overworld.enter_room(
+                room_id,
+                coordinate_scale=getattr(room, "gml_coordinate_scale", 1.0),
+            )
     def check_room_transitions(self):
         for exit in self.room.exits:
             if self.player.is_touching_exit(exit):
@@ -2600,7 +2651,7 @@ class Game:
             self.canvas.itemconfigure(self.debug_text, state="hidden")
             return
         self.canvas.itemconfigure(self.debug_text, state="normal")
-        if (self.player.x, self.player.y) != self.player.x or self.player.y:
+        if hasattr(self, "player"):
             self.canvas.itemconfig(
                 self.debug_text,
                 text=(
@@ -2827,48 +2878,102 @@ class Game:
         self.dialogue_writer.skip()
         self._sync_dialogue_compat_state()
 
-    def interact(self, event=None):
-        if self.state != "playing":
-            return
+    # ======================================================
+    # GAME MAKER WORLD OBJECT / ROOM-CONTROLLER ADAPTERS
+    # ======================================================
+    def d_ex(self):
+        """GML dialogue-instance existence, using our real DialogueWriter."""
+        return bool(self.dialogue_writer.active)
 
-        if self.dialogue_writer.active:
-            self.advance_dialogue(event)
-            return
+    def instance_create(self, x, y, resource):
+        return self.overworld.instance_create(x, y, resource)
 
-        if self.choice_active:
-            return
+    def instance_destroy(self, instance):
+        self.overworld.instance_destroy(instance)
 
-        interaction_box = (
-            self.player.get_interaction_box()
+    def instance_exists(self, instance):
+        return self.overworld.instance_exists(instance)
+
+    def i_ex(self, instance):
+        return self.instance_exists(instance)
+
+    def instances_of(self, resource):
+        return self.overworld.instances_of(resource)
+
+    def get_room_controller(self, resource):
+        return self.overworld.get_room_controller(resource)
+
+    def collision_rectangle(self, x1, y1, x2, y2, resource,
+                            precise=False, notme=True):
+        return self.overworld.collision_rectangle(
+            x1, y1, x2, y2, resource, precise, notme,
         )
 
-        for obj in self.room.interactable_objects:
-            obj_box = (
-                obj.x,
-                obj.y,
-                obj.x + obj.width,
-                obj.y + obj.height,
-            )
+    def register_room_controller(self, room_id, factory):
+        self.overworld.register_room_controller(room_id, factory)
 
-            if not self.rectangles_overlap(
-                interaction_box,
-                obj_box,
-            ):
+    def register_room_handler(self, room_id, extflag, callback):
+        self.overworld.register_room_handler(room_id, extflag, callback)
+
+    def register_room_dialogue(self, room_id, extflag, messages, options=None):
+        """Register Chapter 6 text without importing Chapter 5 cutscenes."""
+        self.overworld.register_room_dialogue(
+            room_id, extflag, messages, options=options,
+        )
+
+    def set_plot(self, value):
+        """Persistent equivalent of global.plot; call at story milestones."""
+        self.global_state.plot = int(value)
+
+    def scr_flag_get(self, index):
+        return self.global_state.flag.get(int(index), 0)
+
+    def scr_flag_set(self, index, value):
+        self.global_state.flag[int(index)] = int(value)
+        if int(index) == 914:
+            self.kris_preservation_society = int(value)
+
+    def interact(self, event=None):
+        """GML player-target dispatch first; old room-data actions fallback.
+
+        The original `obj_mainchara` probes two object families and runs
+        `scr_interact()` in the chosen object's context. Legacy Room actions
+        are retained only for objects not yet migrated to the GML hierarchy.
+        """
+        if self.state != "playing" or self.dialogue_writer.active:
+            return
+        if self.choice_active or self.global_state.interact != 0:
+            return
+
+        # Object controller scripts are authoritative when an instance is hit.
+        if self.overworld.try_interact() is not None:
+            return
+
+        # A controller can have queued dialogue while global.interact is 0.
+        # Don't run the old room-data actions during that handoff, or bypass
+        # Kris's original post-dialogue onebuffer guard in a migrated room.
+        controller = self.overworld.controller
+        if controller is not None and (
+            controller.pending is not None
+            or controller.active_interaction is not None
+        ):
+            return
+        if self.overworld.instances and self.player.onebuffer >= 0:
+            return
+
+        # Existing room definitions can remain playable during migration;
+        # this branch can go away once each room's instances are ported.
+        interaction_box = self.player.get_interaction_box()
+        for obj in getattr(self.room, "interactable_objects", ()):
+            obj_box = (obj.x, obj.y, obj.x + obj.width, obj.y + obj.height)
+            if not self.rectangles_overlap(interaction_box, obj_box):
                 continue
-
             if obj.action == "dialogue":
                 self.start_dialogue()
-
             elif obj.action == "scene":
-                self.load_scene(
-                    obj.data
-                )
-
+                self.load_scene(obj.data)
             elif obj.action == "sound":
-                self.audio.play_sound(
-                    obj.data
-                )
-
+                self.audio.play_sound(obj.data)
             break
 
     def handle_z(self, event=None):
@@ -2904,7 +3009,8 @@ class Game:
         self.root.bind("<KeyPress>", self.key_press)
         self.root.bind("<KeyRelease>", self.key_release)
         # self.root.bind("<KeyRelease-Escape>", self.quit_game_release)
-        self.root.bind("<space>", self.handle_z)
+        # Space uses the same debounced KeyPress handler as Z. Binding it
+        # separately bypassed keys_pressed and allowed OS auto-repeat.
         self.root.bind("<Configure>", self.on_resize)
     def key_press(self, event):
         key = event.keysym
@@ -2960,7 +3066,8 @@ class Game:
             if key == "F12":
                 self.end_battle_preview()
             elif self.state == "battle_ready" and self.combat is not None:
-                self.combat.handle_key(key)
+                # Z and Space are both confirmation keys, including in battle.
+                self.combat.handle_key("z" if key == "space" else key)
             return
 
         # Dialogue button2 / X skips the remainder of a skippable page.
@@ -2976,7 +3083,7 @@ class Game:
         if key == "c":
             self.toggle_menu()
             return
-        elif key == "z":
+        elif key in ("z", "space"):
             self.handle_z()
             return
 
@@ -3033,6 +3140,10 @@ class Game:
     def toggle_menu(self, event=None):
         if self.transitioning:
             return
+        if self.state == "playing" and (
+            self.dialogue_writer.active or self.global_state.interact != 0
+        ):
+            return
         if self.state == "playing":
             self.menu.open()
             self.hud.open()
@@ -3053,8 +3164,9 @@ class Game:
                 self.fade_alpha = 255
                 self.load_room(
                     self.pending_room,
-                    self.pending_facing)
-                self.player.x, self.player.y = self.pending_spawn
+                    self.pending_facing,
+                    spawn=self.pending_spawn,
+                )
                 self.update_camera()
                 self.render_static()
                 self.fade_mode = "in"
@@ -3078,7 +3190,7 @@ class Game:
         self.dialogue_writer.advance_or_skip()
         self._sync_dialogue_compat_state()
     def check_dialogue_triggers(self):
-        if self.dialogue_writer.active:
+        if self.dialogue_writer.active or self.global_state.interact != 0:
             return
 
         player_box = self.player.get_hitbox()
@@ -3137,15 +3249,32 @@ class Game:
 
         return data
 
-    def save(self, slot, data):
-        # where data is a dictionary containing the game state to be saved (e.g. "{plrX: 0, plrY: 0, room: "room_id", flags: {...}}")
-        # Save the game to the specified slot
+    def save(self, slot, data, *, preserve_supplied_progression=False):
+        """Save current plot/flags unless copying already-serialized data.
+
+        A currently loaded save dictionary may contain stale plot values;
+        ordinary saves MUST serialize live global.plot and global.flag.
+        Copying a slot explicitly preserves that slot's serialized state.
+        Temporary `con`/`myinteract` is never serialized here.
+        """
         filename = f"filech6_{slot}.json"
-        
-        with open(filename, "w") as file:
-            json.dump(data, file, indent=4)
-        print("Game saved successfully!") #temp for ensuring things work, delete later
-        pass
+        payload = dict(data)
+        if preserve_supplied_progression:
+            payload.setdefault("plot", 0)
+            payload.setdefault("light_world_flags", {})
+        else:
+            payload["plot"] = int(self.global_state.plot)
+            payload["light_world_flags"] = {
+                str(k): int(v) for k, v in self.global_state.flag.items()
+            }
+            payload["kris_preservation_society"] = int(
+                self.global_state.flag.get(
+                    914, getattr(self, "kris_preservation_society", 0)
+                )
+            )
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(payload, file, indent=4)
+        print("Game saved successfully!")
     def erase(self, slot):
         # Erase the specified save slot
         filename = f"filech6_{slot}.json"
@@ -3160,7 +3289,10 @@ class Game:
         # Copy the game from source_slot to target_slot
         # Reading for a copy must not launch the selected slot.
         loaded_data = self.load(source_slot, start_game=False)
-        self.save(target_slot, loaded_data)
+        self.save(
+            target_slot, loaded_data,
+            preserve_supplied_progression=True,
+        )
         #pretty neat to reuse save functions, right?
         
         print(f"Save slot {source_slot} copied to {target_slot}.") #temp for ensuring things work, delete later
@@ -3183,6 +3315,8 @@ class Game:
             "LW_phone": [201],
 
             "opening_complete": False,
+            "plot": 0,
+            "light_world_flags": {},
         }
         if start_game:
             self.start_opening_scene(
@@ -3569,6 +3703,9 @@ class Game:
                 self._sync_dialogue_compat_state()
 
             self.dialogue_box.update()
+            # Recovered room-object Step events precede player movement here;
+            # a queued inspection can open dialogue and lock movement safely.
+            self.overworld.step()
 
             movement_keys_held = bool(
                 self.keys_pressed & {"Left", "Right", "Up", "Down"}
@@ -3576,7 +3713,7 @@ class Game:
 
             started_moving = movement_keys_held and not self.was_moving
 
-            if not self.dialogue_blocks_movement:
+            if not (self.dialogue_blocks_movement or self.dialogue_writer.active):
                 if started_moving:
                     self.player.speed = self.player.walk_speed
 
